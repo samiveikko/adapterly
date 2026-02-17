@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invitation to {{ account_name }}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #1a1a1a;
+            background: linear-gradient(135deg, {{ app_primary_color }} 0%, {{ app_secondary_color }} 100%);
+            margin: 0;
+            padding: 40px 20px;
+        }
+        .email-wrapper {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .email-container {
+            background-color: #ffffff;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        .email-header {
+            background: linear-gradient(135deg, {{ app_primary_color }} 0%, {{ app_secondary_color }} 100%);
+            padding: 50px 40px;
+            text-align: center;
+            position: relative;
+        }
+        .email-header::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, {{ app_primary_color }} 0%, {{ app_secondary_color }} 50%, {{ app_primary_color }} 100%);
+        }
+        .logo-container {
+            margin-bottom: 20px;
+        }
+        .logo-text {
+            font-size: 48px;
+            font-weight: 800;
+            color: white;
+            margin: 0;
+            letter-spacing: -1px;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        .logo-subtitle {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            margin-top: 5px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        .email-body {
+            padding: 50px 40px;
+        }
+        .greeting {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin: 0 0 10px 0;
+            text-align: center;
+        }
+        .emoji {
+            font-size: 48px;
+            display: block;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .intro-text {
+            text-align: center;
+            font-size: 18px;
+            color: #4a4a4a;
+            margin-bottom: 30px;
+        }
+        .inviter-name {
+            color: {{ app_primary_color }};
+            font-weight: 600;
+        }
+        .account-card {
+            background: linear-gradient(135deg, #f8f9ff 0%, #f0f3ff 100%);
+            border: 2px solid {{ app_primary_color }};
+            border-radius: 12px;
+            padding: 25px;
+            margin: 30px 0;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .account-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, {{ app_primary_color }} 0%, {{ app_secondary_color }} 100%);
+        }
+        .account-name {
+            font-size: 26px;
+            font-weight: 700;
+            color: {{ app_primary_color }};
+            margin: 0 0 15px 0;
+        }
+        .admin-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+            color: #1a1a1a;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 700;
+            box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3);
+        }
+        .admin-badge::before {
+            content: '👑';
+            margin-right: 6px;
+            font-size: 16px;
+        }
+        .feature-box {
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 25px 0;
+            text-align: center;
+        }
+        .feature-box p {
+            margin: 0;
+            color: #4a4a4a;
+            font-size: 15px;
+            line-height: 1.8;
+        }
+        .cta-container {
+            text-align: center;
+            margin: 35px 0;
+        }
+        .cta-button {
+            display: inline-block;
+            padding: 18px 40px;
+            background: linear-gradient(135deg, {{ app_primary_color }} 0%, {{ app_secondary_color }} 100%);
+            color: white !important;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 18px;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.5);
+        }
+        .expiry-notice {
+            background: linear-gradient(135deg, #fff3cd 0%, #fff8dc 100%);
+            border-left: 4px solid #ffc107;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin: 25px 0;
+            display: flex;
+            align-items: center;
+        }
+        .expiry-notice::before {
+            content: '⏰';
+            font-size: 24px;
+            margin-right: 12px;
+        }
+        .expiry-notice p {
+            margin: 0;
+            color: #856404;
+            font-weight: 600;
+        }
+        .divider {
+            height: 2px;
+            background: linear-gradient(90deg, transparent 0%, #e9ecef 50%, transparent 100%);
+            margin: 35px 0;
+        }
+        .alternative-link {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .alternative-link p {
+            margin: 0 0 10px 0;
+            font-size: 13px;
+            color: #6c757d;
+            text-align: center;
+        }
+        .link-text {
+            word-break: break-all;
+            font-size: 12px;
+            color: {{ app_primary_color }};
+            text-align: center;
+            display: block;
+            padding: 10px;
+            background-color: white;
+            border-radius: 6px;
+            border: 1px dashed {{ app_primary_color }};
+        }
+        .email-footer {
+            background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+            padding: 40px;
+            text-align: center;
+            color: white;
+        }
+        .footer-logo {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        .footer-tagline {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 20px;
+        }
+        .footer-note {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="email-wrapper">
+        <div class="email-container">
+            <!-- Header -->
+            <div class="email-header">
+                <div class="logo-container">
+                    <h1 class="logo-text">{{ app_name }}</h1>
+                    <div class="logo-subtitle">{{ app_tagline }}</div>
+                </div>
+            </div>
+            
+            <!-- Body -->
+            <div class="email-body">
+                <div class="emoji">🎉</div>
+                <h2 class="greeting">You're Invited!</h2>
+                
+                <p class="intro-text">
+                    <span class="inviter-name">{{ inviter_name }}</span> has invited you to join their team on {{ app_name }}
+                </p>
+                
+                <!-- Account Card -->
+                <div class="account-card">
+                    <div class="account-name">{{ account_name }}</div>
+                    {% if is_admin %}
+                        <div class="admin-badge">Administrator Access</div>
+                    {% endif %}
+                </div>
+                
+                <!-- Feature Description -->
+                <div class="feature-box">
+                    <p>
+                        <strong>{{ app_name }}</strong> is an AI integration platform that connects your industry systems.
+                        Let AI agents query across all your systems with natural language.
+                    </p>
+                </div>
+                
+                <!-- CTA Button -->
+                <div class="cta-container">
+                    <a href="{{ invitation_url }}" class="cta-button">
+                        Accept Invitation →
+                    </a>
+                </div>
+                
+                <!-- Expiry Notice -->
+                <div class="expiry-notice">
+                    <p>This invitation expires in {{ expires_days }} days</p>
+                </div>
+                
+                <div class="divider"></div>
+                
+                <!-- Alternative Link -->
+                <div class="alternative-link">
+                    <p>If the button doesn't work, copy this link:</p>
+                    <span class="link-text">{{ invitation_url }}</span>
+                </div>
+            </div>
+            
+            <!-- Footer -->
+            <div class="email-footer">
+                <div class="footer-logo">{{ app_name }}</div>
+                <div class="footer-tagline">{{ app_tagline }}</div>
+                
+                <div class="footer-note">
+                    If you weren't expecting this invitation, you can safely ignore this email.
+                    <br>No account will be created unless you click the acceptance link.
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+

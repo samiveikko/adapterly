@@ -1,0 +1,191 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Entity Mappings - {{ active_account.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-1">
+      <i class="bi bi-diagram-3 text-primary"></i> Entity Mappings
+    </h4>
+    <p class="text-muted mb-0">Map entities across different systems (e.g., Jira project = Salesforce account)</p>
+  </div>
+  <a href="{% url 'mapping_create' %}" class="btn btn-primary">
+    <i class="bi bi-plus-circle"></i> New Mapping
+  </a>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+  <div class="card-body">
+    <form method="get" class="row g-3 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label small text-muted">Entity Type</label>
+        <select name="entity_type" class="form-select">
+          <option value="">All Types</option>
+          {% for et in entity_types %}
+          <option value="{{ et.name }}" {% if entity_type_filter == et.name %}selected{% endif %}>
+            {{ et.display_name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted">System</label>
+        <select name="system" class="form-select">
+          <option value="">All Systems</option>
+          {% for sys in configured_systems %}
+          <option value="{{ sys.alias }}" {% if system_filter == sys.alias %}selected{% endif %}>
+            {{ sys.display_name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small text-muted">Search</label>
+        <input type="text" name="search" class="form-control" placeholder="Search by name..." value="{{ search_query }}">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-outline-secondary w-100">
+          <i class="bi bi-filter"></i> Filter
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Mappings List -->
+<div class="card">
+  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+    <h5 class="mb-0 text-dark">
+      <i class="bi bi-list text-secondary"></i> Mappings
+    </h5>
+    <span class="badge bg-light text-dark border">{{ mappings.count }} mapping{{ mappings.count|pluralize }}</span>
+  </div>
+  <div class="card-body p-0">
+    {% if mappings %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="bg-light">
+          <tr>
+            <th>Canonical Name</th>
+            <th>Type</th>
+            <th>System Identifiers</th>
+            <th>Status</th>
+            <th class="text-end" style="width: 150px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for mapping in mappings %}
+          <tr>
+            <td>
+              <div class="fw-medium">{{ mapping.canonical_name }}</div>
+              {% if mapping.canonical_id %}
+              <small class="text-muted">ID: {{ mapping.canonical_id }}</small>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge bg-light text-dark border">
+                <i class="bi bi-{{ mapping.entity_type.icon|default:'tag' }}"></i>
+                {{ mapping.entity_type.display_name }}
+              </span>
+            </td>
+            <td>
+              {% for ident in mapping.identifiers.all %}
+              <span class="badge bg-secondary me-1" title="{{ ident.system.display_name }}">
+                {{ ident.system.alias }}: {{ ident.identifier_value }}
+              </span>
+              {% empty %}
+              <span class="text-muted small">No identifiers</span>
+              {% endfor %}
+            </td>
+            <td>
+              {% if mapping.is_active %}
+              <span class="badge bg-light text-success border border-success">
+                <i class="bi bi-check-circle"></i> Active
+              </span>
+              {% else %}
+              <span class="badge bg-light text-secondary border">
+                <i class="bi bi-x-circle"></i> Inactive
+              </span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <div class="btn-group btn-group-sm">
+                <a href="{% url 'mapping_edit' mapping.id %}" class="btn btn-outline-primary" title="Edit">
+                  <i class="bi bi-pencil"></i>
+                </a>
+                <button type="button" class="btn btn-outline-danger"
+                        onclick="deleteMapping({{ mapping.id }}, '{{ mapping.canonical_name|escapejs }}')" title="Delete">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5">
+      <i class="bi bi-diagram-3 text-muted" style="font-size: 3rem;"></i>
+      <p class="text-muted mt-3 mb-2">No entity mappings found.</p>
+      {% if entity_type_filter or system_filter or search_query %}
+      <p class="text-muted small">Try adjusting your filters or <a href="{% url 'mappings_list' %}">clear all filters</a>.</p>
+      {% else %}
+      <p class="text-muted small">Create a mapping to link entities across your connected systems.</p>
+      <a href="{% url 'mapping_create' %}" class="btn btn-primary mt-2">
+        <i class="bi bi-plus-circle"></i> Create First Mapping
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Help Card -->
+<div class="card mt-4 border-info">
+  <div class="card-body">
+    <h6 class="card-title text-info">
+      <i class="bi bi-lightbulb"></i> How to use Entity Mappings
+    </h6>
+    <p class="card-text small text-muted mb-2">
+      Entity mappings allow you to link the same logical entity across different systems. For example:
+    </p>
+    <ul class="small text-muted mb-2">
+      <li><strong>ACME Corporation</strong> = Jira project "ACME" = Salesforce Account "001ABC" = GitHub org "acme-corp"</li>
+      <li><strong>John Doe</strong> = Jira user "jdoe" = Salesforce Contact "003XYZ"</li>
+    </ul>
+    <p class="card-text small text-muted mb-0">
+      AI agents use <code>resolve_entity</code> to automatically translate identifiers between systems when querying data.
+    </p>
+  </div>
+</div>
+
+<script>
+function deleteMapping(id, name) {
+  if (!confirm(`Are you sure you want to delete the mapping "${name}"?\n\nThis will also delete all associated system identifiers.`)) {
+    return;
+  }
+
+  fetch(`/systems/mappings/${id}/delete/`, {
+    method: 'POST',
+    headers: {
+      'X-CSRFToken': '{{ csrf_token }}'
+    }
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      location.reload();
+    } else {
+      alert('Error: ' + (data.error || 'Failed to delete'));
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Error deleting mapping');
+  });
+}
+</script>
+{% endblock %}

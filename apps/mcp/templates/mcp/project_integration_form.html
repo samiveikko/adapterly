@@ -1,0 +1,158 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}{% if integration %}Edit{% else %}Add{% endif %} Integration - {{ project.name }} - {{ active_account.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item"><a href="{% url 'mcp:dashboard' %}">MCP Gateway</a></li>
+                <li class="breadcrumb-item">{{ project.name }}</li>
+                <li class="breadcrumb-item"><a href="{% url 'mcp:project_integrations' project.id %}">Integrations</a></li>
+                <li class="breadcrumb-item active">{% if integration %}Edit{% else %}Add{% endif %}</li>
+            </ol>
+        </nav>
+        <h2 class="mb-0">
+            <i class="bi bi-plug text-secondary"></i>
+            {% if integration %}Edit Integration: {{ integration.system.display_name }}{% else %}Add Integration{% endif %}
+        </h2>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <form method="post">
+            {% csrf_token %}
+
+            <!-- System Selection (only for add) -->
+            {% if not integration %}
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-white border-bottom">
+                    <h6 class="mb-0"><i class="bi bi-hdd-network text-secondary"></i> System</h6>
+                </div>
+                <div class="card-body">
+                    {% if available_systems %}
+                    <div class="mb-0">
+                        <label for="system_id" class="form-label">Select System *</label>
+                        <select class="form-select" id="system_id" name="system_id" required>
+                            <option value="">-- Select a system --</option>
+                            {% for system in available_systems %}
+                            <option value="{{ system.id }}">{{ system.display_name }} ({{ system.alias }})</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Only systems connected to your account are shown.</small>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning mb-0">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        No available systems. Either all systems are already integrated with this project,
+                        or no systems are connected to your account.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Configuration -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-white border-bottom">
+                    <h6 class="mb-0"><i class="bi bi-gear text-secondary"></i> Configuration</h6>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Credential Source *</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="credential_source"
+                                       id="cred_account" value="account"
+                                       {% if not integration or integration.credential_source == 'account' %}checked{% endif %}>
+                                <label class="form-check-label" for="cred_account">
+                                    <i class="bi bi-building text-secondary"></i> Account (shared)
+                                    <small class="d-block text-muted">Use account-level credentials shared across projects</small>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="credential_source"
+                                       id="cred_project" value="project"
+                                       {% if integration and integration.credential_source == 'project' %}checked{% endif %}>
+                                <label class="form-check-label" for="cred_project">
+                                    <i class="bi bi-folder text-info"></i> Project-specific
+                                    <small class="d-block text-muted">Use credentials configured specifically for this project</small>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="external_id" class="form-label">External ID</label>
+                        <input type="text" class="form-control" id="external_id" name="external_id"
+                               value="{% if integration %}{{ integration.external_id }}{% endif %}"
+                               placeholder="e.g., PROJ-123, org/repo, workspace-id">
+                        <small class="text-muted">
+                            System-specific project identifier. Used to scope operations to the correct project in the external system.
+                        </small>
+                    </div>
+
+                    {% if integration %}
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="is_enabled" name="is_enabled"
+                                   {% if integration.is_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="is_enabled">
+                                Integration is enabled
+                            </label>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="mb-0">
+                        <label for="notes" class="form-label">Notes</label>
+                        <textarea class="form-control" id="notes" name="notes" rows="2"
+                                  placeholder="Optional notes about this integration">{% if integration %}{{ integration.notes }}{% endif %}</textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="d-flex justify-content-between">
+                <a href="{% url 'mcp:project_integrations' project.id %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Cancel
+                </a>
+                {% if not integration and not available_systems %}
+                <button type="submit" class="btn btn-primary" disabled>
+                    <i class="bi bi-save"></i> Add Integration
+                </button>
+                {% else %}
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save"></i> {% if integration %}Save Changes{% else %}Add Integration{% endif %}
+                </button>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- Sidebar Help -->
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="bi bi-question-circle text-secondary"></i> How Integrations Work</h6>
+            </div>
+            <div class="card-body small">
+                <p><strong>1. System</strong><br>
+                Choose which external system to connect to this project.</p>
+
+                <p><strong>2. Credential Source</strong><br>
+                <em>Account</em> uses shared credentials. <em>Project-specific</em> uses credentials configured just for this project.</p>
+
+                <p><strong>3. External ID</strong><br>
+                The project identifier in the external system (e.g., a Jira project key, GitHub repo path).</p>
+
+                <p class="mb-0"><strong>4. Enabled</strong><br>
+                Disabled integrations hide their tools from MCP agents.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

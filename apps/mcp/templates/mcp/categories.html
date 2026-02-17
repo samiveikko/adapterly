@@ -1,0 +1,421 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}Tool Categories - MCP Gateway{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item"><a href="{% url 'mcp:dashboard' %}">MCP Gateway</a></li>
+                <li class="breadcrumb-item active">Categories</li>
+            </ol>
+        </nav>
+        <h2 class="mb-0">
+            <i class="bi bi-tags text-secondary"></i> Tool Categories
+        </h2>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createCategoryModal">
+        <i class="bi bi-plus-circle"></i> Create Category
+    </button>
+</div>
+
+<!-- Category Selection -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+            <label class="form-label mb-0 fw-bold">Select Category:</label>
+            {% for cat in categories %}
+            <button class="btn {% if forloop.first %}btn-primary{% else %}btn-outline-primary{% endif %} category-btn"
+                    data-category-id="{{ cat.id }}"
+                    data-category-key="{{ cat.key }}"
+                    onclick="selectCategory({{ cat.id }}, '{{ cat.key }}', '{{ cat.name }}')">
+                {{ cat.name }}
+                <span class="badge bg-white text-primary ms-1">{{ cat.mapping_count }}</span>
+            </button>
+            {% empty %}
+            <span class="text-muted">No categories yet. Create one first.</span>
+            {% endfor %}
+
+            {% if categories %}
+            <div class="ms-auto">
+                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#manageCategoriesModal">
+                    <i class="bi bi-gear"></i> Manage Categories
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Tool Assignment Panel -->
+{% if categories %}
+<div class="row" id="toolAssignmentPanel">
+    <!-- In Category -->
+    <div class="col-md-5">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-success text-white">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">
+                        <i class="bi bi-check-circle"></i> In "<span id="categoryNameLeft">{{ categories.0.name }}</span>"
+                    </h6>
+                    <span class="badge bg-white text-success" id="inCategoryCount">0</span>
+                </div>
+            </div>
+            <div class="card-body p-2">
+                <input type="text" class="form-control form-control-sm mb-2"
+                       placeholder="Search..." onkeyup="filterList('inCategoryList', this.value)">
+                <div id="inCategoryList" class="tool-list" style="height: 400px; overflow-y: auto;">
+                    <!-- Tools will be populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Move Buttons -->
+    <div class="col-md-2 d-flex flex-column justify-content-center align-items-center gap-2 py-4">
+        <button class="btn btn-outline-danger" onclick="removeSelected()" title="Remove from category">
+            <i class="bi bi-arrow-right"></i>
+        </button>
+        <button class="btn btn-outline-success" onclick="addSelected()" title="Add to category">
+            <i class="bi bi-arrow-left"></i>
+        </button>
+        <hr class="w-100">
+        <button class="btn btn-sm btn-outline-secondary" onclick="addAll()" title="Add all">
+            <i class="bi bi-chevron-double-left"></i> All
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="removeAll()" title="Remove all">
+            All <i class="bi bi-chevron-double-right"></i>
+        </button>
+    </div>
+
+    <!-- Not in Category -->
+    <div class="col-md-5">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-secondary text-white">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">
+                        <i class="bi bi-x-circle"></i> Available Tools
+                    </h6>
+                    <span class="badge bg-white text-secondary" id="availableCount">0</span>
+                </div>
+            </div>
+            <div class="card-body p-2">
+                <input type="text" class="form-control form-control-sm mb-2"
+                       placeholder="Search..." onkeyup="filterList('availableList', this.value)">
+                <div id="availableList" class="tool-list" style="height: 400px; overflow-y: auto;">
+                    <!-- Tools will be populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card shadow-sm border-0">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-tags text-muted" style="font-size: 4rem;"></i>
+        <h4 class="mt-3">Create a Category First</h4>
+        <p class="text-muted">You need at least one category to assign tools.</p>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createCategoryModal">
+            <i class="bi bi-plus-circle"></i> Create Category
+        </button>
+    </div>
+</div>
+{% endif %}
+
+<!-- Create Category Modal -->
+<div class="modal fade" id="createCategoryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create Category</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="categoryKey" class="form-label">Key *</label>
+                    <input type="text" class="form-control" id="categoryKey" placeholder="e.g., read, write, admin">
+                    <small class="text-muted">Lowercase, letters and underscores only</small>
+                </div>
+                <div class="mb-3">
+                    <label for="categoryName" class="form-label">Name *</label>
+                    <input type="text" class="form-control" id="categoryName" placeholder="e.g., Read Operations">
+                </div>
+                <div class="mb-3">
+                    <label for="categoryRisk" class="form-label">Risk Level</label>
+                    <select class="form-select" id="categoryRisk">
+                        <option value="low">Low - Safe operations</option>
+                        <option value="medium">Medium - Some caution needed</option>
+                        <option value="high">High - Sensitive operations</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createCategory()">Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Manage Categories Modal -->
+<div class="modal fade" id="manageCategoriesModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Manage Categories</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="list-group">
+                    {% for cat in categories %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ cat.name }}</strong>
+                            <code class="ms-2">{{ cat.key }}</code>
+                            <span class="badge {% if cat.risk_level == 'low' %}bg-success{% elif cat.risk_level == 'medium' %}bg-warning text-dark{% else %}bg-danger{% endif %} ms-1">
+                                {{ cat.get_risk_level_display }}
+                            </span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteCategory({{ cat.id }}, '{{ cat.name }}')">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.tool-list .tool-item {
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.15s;
+}
+.tool-list .tool-item:hover {
+    background: #e9ecef;
+}
+.tool-list .tool-item.selected {
+    border-color: #0d6efd;
+    background: #e7f1ff;
+}
+.tool-list .tool-item code {
+    font-size: 0.9em;
+}
+.tool-list .tool-item .badge {
+    font-size: 0.7em;
+}
+</style>
+
+<script>
+const csrfToken = '{{ csrf_token }}';
+let currentCategoryId = {{ categories.0.id|default:"null" }};
+let currentCategoryKey = '{{ categories.0.key|default:"" }}';
+let allTools = {{ available_tools|safe }};
+let toolMappings = {};  // tool_name -> category_id
+
+// Initialize mappings from server data
+{% for m in mappings %}
+toolMappings['{{ m.tool_key_pattern }}'] = {{ m.category.id }};
+{% endfor %}
+
+function selectCategory(id, key, name) {
+    currentCategoryId = id;
+    currentCategoryKey = key;
+
+    // Update button states
+    document.querySelectorAll('.category-btn').forEach(btn => {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-outline-primary');
+    });
+    document.querySelector(`[data-category-id="${id}"]`).classList.remove('btn-outline-primary');
+    document.querySelector(`[data-category-id="${id}"]`).classList.add('btn-primary');
+
+    // Update header
+    document.getElementById('categoryNameLeft').textContent = name;
+
+    renderLists();
+}
+
+function renderLists() {
+    const inCategory = [];
+    const available = [];
+
+    allTools.forEach(tool => {
+        if (toolMappings[tool.name] === currentCategoryId) {
+            inCategory.push(tool);
+        } else if (!toolMappings[tool.name]) {
+            // Only show unassigned tools in available list
+            available.push(tool);
+        }
+    });
+
+    document.getElementById('inCategoryList').innerHTML = inCategory.map(t => toolItemHtml(t)).join('');
+    document.getElementById('availableList').innerHTML = available.map(t => toolItemHtml(t)).join('');
+
+    document.getElementById('inCategoryCount').textContent = inCategory.length;
+    document.getElementById('availableCount').textContent = available.length;
+}
+
+function toolItemHtml(tool) {
+    return `
+        <div class="tool-item" data-tool-name="${tool.name}" onclick="toggleSelect(this)">
+            <code>${tool.name}</code>
+            <span class="badge bg-secondary ms-1">${tool.group}</span>
+            <span class="badge ${tool.type === 'system_write' ? 'bg-warning text-dark' : 'bg-light text-dark'} ms-1">${tool.type}</span>
+        </div>
+    `;
+}
+
+function toggleSelect(el) {
+    el.classList.toggle('selected');
+}
+
+function filterList(listId, search) {
+    search = search.toLowerCase();
+    document.querySelectorAll(`#${listId} .tool-item`).forEach(item => {
+        const name = item.dataset.toolName.toLowerCase();
+        item.style.display = name.includes(search) ? '' : 'none';
+    });
+}
+
+function getSelectedTools(listId) {
+    return Array.from(document.querySelectorAll(`#${listId} .tool-item.selected`))
+        .map(el => el.dataset.toolName);
+}
+
+async function addSelected() {
+    const tools = getSelectedTools('availableList');
+    if (tools.length === 0) return;
+
+    for (const toolName of tools) {
+        await assignTool(toolName, currentCategoryId);
+        toolMappings[toolName] = currentCategoryId;
+    }
+    renderLists();
+    updateCategoryCount();
+}
+
+async function removeSelected() {
+    const tools = getSelectedTools('inCategoryList');
+    if (tools.length === 0) return;
+
+    for (const toolName of tools) {
+        await assignTool(toolName, '');
+        delete toolMappings[toolName];
+    }
+    renderLists();
+    updateCategoryCount();
+}
+
+async function addAll() {
+    const tools = Array.from(document.querySelectorAll('#availableList .tool-item:not([style*="display: none"])'))
+        .map(el => el.dataset.toolName);
+    if (tools.length === 0) return;
+
+    for (const toolName of tools) {
+        await assignTool(toolName, currentCategoryId);
+        toolMappings[toolName] = currentCategoryId;
+    }
+    renderLists();
+    updateCategoryCount();
+}
+
+async function removeAll() {
+    const tools = Array.from(document.querySelectorAll('#inCategoryList .tool-item:not([style*="display: none"])'))
+        .map(el => el.dataset.toolName);
+    if (tools.length === 0) return;
+
+    for (const toolName of tools) {
+        await assignTool(toolName, '');
+        delete toolMappings[toolName];
+    }
+    renderLists();
+    updateCategoryCount();
+}
+
+function updateCategoryCount() {
+    const count = Object.values(toolMappings).filter(id => id === currentCategoryId).length;
+    const btn = document.querySelector(`[data-category-id="${currentCategoryId}"] .badge`);
+    if (btn) btn.textContent = count;
+}
+
+async function assignTool(toolName, categoryId) {
+    const response = await fetch('{% url "mcp:tool_assign_category" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': csrfToken
+        },
+        body: `tool_name=${encodeURIComponent(toolName)}&category_id=${categoryId}`
+    });
+    return response.json();
+}
+
+function createCategory() {
+    const key = document.getElementById('categoryKey').value.trim().toLowerCase();
+    const name = document.getElementById('categoryName').value.trim();
+    const risk_level = document.getElementById('categoryRisk').value;
+
+    if (!key || !name) {
+        alert('Key and Name are required');
+        return;
+    }
+
+    fetch('{% url "mcp:category_create" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': csrfToken
+        },
+        body: `key=${encodeURIComponent(key)}&name=${encodeURIComponent(name)}&risk_level=${risk_level}`
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    });
+}
+
+function deleteCategory(id, name) {
+    if (!confirm(`Delete category "${name}"? Tools will become unassigned.`)) return;
+
+    fetch('{% url "mcp:category_delete" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': csrfToken
+        },
+        body: `category_id=${id}`
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    });
+}
+
+// Initialize on load
+{% if categories %}
+document.addEventListener('DOMContentLoaded', () => {
+    renderLists();
+});
+{% endif %}
+</script>
+{% endblock %}

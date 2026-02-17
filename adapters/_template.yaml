@@ -1,0 +1,117 @@
+# Adapter Definition Template
+# ===========================
+# Copy this file to adapters/<industry>/<system_alias>.yaml and fill in.
+# Run: python manage.py load_adapters --dry-run to validate.
+#
+# Required fields are marked with (required).
+# All alias fields must be unique within their scope and use lowercase/underscores.
+
+# ---------------------------------------------------------------------------
+# System — the top-level software product
+# ---------------------------------------------------------------------------
+system:
+  alias: my_system                # (required) unique identifier, lowercase
+  name: my_system                 # (required) internal name
+  display_name: My System         # (required) human-readable name
+  description: >                  # (required) what this system does
+    Short description of the system and its main capabilities.
+  system_type: other              # (required) one of: project_management, communication,
+                                  #   version_control, ci_cd, monitoring, storage,
+                                  #   quality_management, erp, bim, other
+  icon: box                       # Bootstrap icon name (without "bi-" prefix)
+  website_url: https://example.com
+  industry: construction          # IndustryTemplate.name — links to an industry vertical
+  variables:                      # arbitrary key-value config (JSONField)
+    api_url: https://api.example.com
+  meta:                           # extra metadata (JSONField)
+    api_version: v1
+    docs_url: https://docs.example.com
+
+# ---------------------------------------------------------------------------
+# Interfaces — how we connect to the system (usually one)
+# ---------------------------------------------------------------------------
+interfaces:
+  - alias: api                    # (required) unique within this system
+    name: api                     # (required)
+    type: API                     # API | GRAPHQL | XHR
+    base_url: https://api.example.com/v1
+    auth:                         # auth configuration (JSONField)
+      type: bearer                # bearer | oauth2 | api_key | basic
+      header: Authorization
+      prefix: Bearer
+    requires_browser: false
+    rate_limits:
+      requests_per_minute: 100
+
+    # Resources — groups of related endpoints
+    resources:
+      - alias: items              # (required) unique within this interface
+        name: items               # (required)
+        description: Item management
+
+        # Actions — individual API endpoints
+        actions:
+          - alias: list           # (required) unique within this resource
+            name: list            # (required)
+            method: GET           # GET | POST | PUT | PATCH | DELETE
+            path: /items
+            description: List all items
+            parameters_schema:    # JSON Schema for parameters
+              type: object
+              properties:
+                status:
+                  type: string
+                  description: Filter by status
+
+          - alias: get
+            name: get
+            method: GET
+            path: /items/{item_id}
+            description: Get item by ID
+            parameters_schema:
+              type: object
+              properties:
+                item_id:
+                  type: string
+                  description: Item ID
+              required:
+                - item_id
+
+          - alias: create
+            name: create
+            method: POST
+            path: /items
+            description: Create a new item
+            parameters_schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Item name
+              required:
+                - name
+
+# ---------------------------------------------------------------------------
+# Authentication steps (optional) — multi-step auth flow
+# ---------------------------------------------------------------------------
+# auth_steps:
+#   - step_order: 1
+#     step_type: api_key          # login | password | two_factor | iam |
+#                                 #   oauth | saml | ldap | api_key | custom
+#     step_name: API Key
+#     description: Enter your API key
+#     input_fields:
+#       api_key:
+#         type: string
+#         label: API Key
+#         required: true
+
+# ---------------------------------------------------------------------------
+# Term mappings (optional) — maps canonical terms to system-specific terms
+# Requires the system to belong to an industry.
+# ---------------------------------------------------------------------------
+# term_mappings:
+#   - canonical_term: project
+#     system_term: Project
+#   - canonical_term: site
+#     system_term: Location

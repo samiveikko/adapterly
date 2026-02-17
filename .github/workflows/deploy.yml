@@ -1,0 +1,46 @@
+name: Deploy to adapterly.ai
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test before deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Django tests
+        env:
+          SECRET_KEY: "test-secret-key-for-ci"
+          DEBUG: "true"
+        run: python manage.py test --verbosity=2
+
+      - name: Check migrations
+        env:
+          SECRET_KEY: "test-secret-key-for-ci"
+          DEBUG: "true"
+        run: python manage.py makemigrations --check --dry-run
+
+  deploy:
+    name: Deploy
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: /opt/adapterly-cloud/deploy/deploy.sh

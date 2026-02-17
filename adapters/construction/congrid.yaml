@@ -1,0 +1,296 @@
+# Congrid — Quality Management for Construction
+# https://congrid.com | https://developer.congrid.com
+
+system:
+  alias: congrid
+  name: congrid
+  display_name: Congrid
+  description: >
+    Quality management and site safety platform for construction.
+    Provides inspections, observations, task management, and TR-measurements.
+  system_type: quality_management
+  icon: clipboard-check
+  website_url: https://congrid.com
+  industry: construction
+  variables:
+    api_url: https://api.congrid.com
+  meta:
+    api_version: v1
+    docs_url: https://developer.congrid.com
+
+interfaces:
+  - alias: api
+    name: api
+    type: API
+    base_url: https://api.congrid.com/v1
+    auth:
+      type: bearer
+      header: Authorization
+      prefix: Bearer
+    requires_browser: false
+    rate_limits:
+      requests_per_minute: 100
+
+    resources:
+      # Projects
+      - alias: projects
+        name: projects
+        description: Project management
+        actions:
+          - alias: list
+            name: list
+            description: List all projects
+            method: GET
+            path: /projects
+            parameters_schema:
+              type: object
+              properties: {}
+
+          - alias: get
+            name: get
+            description: Get project details
+            method: GET
+            path: /projects/{project_id}
+            parameters_schema:
+              type: object
+              properties:
+                project_id:
+                  type: string
+                  description: Project ID
+              required:
+                - project_id
+
+      # Observations (Havainnot)
+      - alias: observations
+        name: observations
+        description: Site observations and quality issues
+        actions:
+          - alias: list
+            name: list
+            description: List observations for a project
+            method: GET
+            path: /projects/{project_id}/observations
+            parameters_schema:
+              type: object
+              properties:
+                project_id:
+                  type: string
+                  description: Project ID
+                status:
+                  type: string
+                  description: Filter by status
+                category:
+                  type: string
+                  description: Filter by category
+              required:
+                - project_id
+
+          - alias: create
+            name: create
+            description: Create a new observation
+            method: POST
+            path: /projects/{project_id}/observations
+            parameters_schema:
+              type: object
+              properties:
+                project_id:
+                  type: string
+                  description: Project ID
+                title:
+                  type: string
+                  description: Observation title
+                description:
+                  type: string
+                  description: Observation description
+                category:
+                  type: string
+                  description: Category
+                severity:
+                  type: string
+                  enum: [low, medium, high, critical]
+              required:
+                - project_id
+                - title
+
+          - alias: get
+            name: get
+            description: Get observation details
+            method: GET
+            path: /observations/{observation_id}
+            parameters_schema:
+              type: object
+              properties:
+                observation_id:
+                  type: string
+                  description: Observation ID
+              required:
+                - observation_id
+
+          - alias: update
+            name: update
+            description: Update observation
+            method: PATCH
+            path: /observations/{observation_id}
+            parameters_schema:
+              type: object
+              properties:
+                observation_id:
+                  type: string
+                  description: Observation ID
+                status:
+                  type: string
+                  description: New status
+                assignee:
+                  type: string
+                  description: Assignee user ID
+              required:
+                - observation_id
+
+      # Inspections (Tarkastukset)
+      - alias: inspections
+        name: inspections
+        description: Quality inspections and TR-measurements
+        actions:
+          - alias: list
+            name: list
+            description: List inspections for a project
+            method: GET
+            path: /projects/{project_id}/inspections
+            parameters_schema:
+              type: object
+              properties:
+                project_id:
+                  type: string
+                  description: Project ID
+                type:
+                  type: string
+                  description: Inspection type
+              required:
+                - project_id
+
+          - alias: get
+            name: get
+            description: Get inspection details
+            method: GET
+            path: /inspections/{inspection_id}
+            parameters_schema:
+              type: object
+              properties:
+                inspection_id:
+                  type: string
+                  description: Inspection ID
+              required:
+                - inspection_id
+
+          - alias: get_results
+            name: get_results
+            description: Get inspection results/TR score
+            method: GET
+            path: /inspections/{inspection_id}/results
+            parameters_schema:
+              type: object
+              properties:
+                inspection_id:
+                  type: string
+                  description: Inspection ID
+              required:
+                - inspection_id
+
+      # Tasks
+      - alias: tasks
+        name: tasks
+        description: Task management
+        actions:
+          - alias: list
+            name: list
+            description: List tasks for a project
+            method: GET
+            path: /projects/{project_id}/tasks
+            parameters_schema:
+              type: object
+              properties:
+                project_id:
+                  type: string
+                  description: Project ID
+                status:
+                  type: string
+                  description: Filter by status
+                assignee:
+                  type: string
+                  description: Filter by assignee
+              required:
+                - project_id
+
+          - alias: create
+            name: create
+            description: Create a new task
+            method: POST
+            path: /projects/{project_id}/tasks
+            parameters_schema:
+              type: object
+              properties:
+                project_id:
+                  type: string
+                  description: Project ID
+                title:
+                  type: string
+                  description: Task title
+                description:
+                  type: string
+                  description: Task description
+                due_date:
+                  type: string
+                  format: date
+                  description: Due date
+                assignee:
+                  type: string
+                  description: Assignee user ID
+              required:
+                - project_id
+                - title
+
+      # Companies (Yritykset/Aliurakoitsijat)
+      - alias: companies
+        name: companies
+        description: Companies and subcontractors
+        actions:
+          - alias: list
+            name: list
+            description: List companies in project
+            method: GET
+            path: /projects/{project_id}/companies
+            parameters_schema:
+              type: object
+              properties:
+                project_id:
+                  type: string
+                  description: Project ID
+              required:
+                - project_id
+
+auth_steps:
+  - step_order: 1
+    step_type: api_key
+    step_name: API Key
+    description: Enter your Congrid API key
+    input_fields:
+      api_key:
+        type: string
+        label: API Key
+        required: true
+
+term_mappings:
+  - canonical_term: project
+    system_term: Project
+  - canonical_term: observation
+    system_term: Observation
+  - canonical_term: inspection
+    system_term: Inspection
+  - canonical_term: site
+    system_term: Worksite
+  - canonical_term: contractor
+    system_term: Company
+  - canonical_term: worker
+    system_term: User
+  - canonical_term: equipment
+    system_term: Equipment

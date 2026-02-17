@@ -1,0 +1,225 @@
+{% extends 'core/base.html' %}
+
+{% block title %}{% if mapping %}Edit{% else %}Create{% endif %} Mapping - {{ active_account.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="d-flex align-items-center mb-4">
+      <a href="{% url 'mappings_list' %}" class="btn btn-outline-secondary btn-sm me-3">
+        <i class="bi bi-arrow-left"></i> Back
+      </a>
+      <h4 class="mb-0">
+        <i class="bi bi-diagram-3 text-primary"></i>
+        {% if mapping %}Edit Mapping{% else %}New Entity Mapping{% endif %}
+      </h4>
+    </div>
+
+    <form method="post" id="mappingForm">
+      {% csrf_token %}
+
+      <!-- Basic Info Card -->
+      <div class="card mb-4">
+        <div class="card-header bg-white">
+          <h6 class="mb-0 text-dark">
+            <i class="bi bi-info-circle text-secondary"></i> Basic Information
+          </h6>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label for="entity_type" class="form-label">Entity Type <span class="text-danger">*</span></label>
+              <select name="entity_type" id="entity_type" class="form-select" required>
+                <option value="">Select entity type...</option>
+                {% for et in entity_types %}
+                <option value="{{ et.id }}"
+                        {% if mapping and mapping.entity_type_id == et.id %}selected{% endif %}
+                        {% if form_data.entity_type == et.id|stringformat:"i" %}selected{% endif %}>
+                  {{ et.display_name }}
+                </option>
+                {% endfor %}
+              </select>
+              <small class="text-muted">What type of entity is this? (project, user, company, etc.)</small>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label for="canonical_name" class="form-label">Canonical Name <span class="text-danger">*</span></label>
+              <input type="text" name="canonical_name" id="canonical_name" class="form-control"
+                     value="{% if mapping %}{{ mapping.canonical_name }}{% elif form_data %}{{ form_data.canonical_name }}{% endif %}"
+                     required placeholder="e.g., ACME Corporation">
+              <small class="text-muted">Human-readable name for this entity</small>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label for="canonical_id" class="form-label">Canonical ID</label>
+              <input type="text" name="canonical_id" id="canonical_id" class="form-control"
+                     value="{% if mapping %}{{ mapping.canonical_id }}{% elif form_data %}{{ form_data.canonical_id }}{% endif %}"
+                     placeholder="e.g., acme-001">
+              <small class="text-muted">Optional internal identifier</small>
+            </div>
+            <div class="col-md-6 mb-3">
+              <div class="form-check mt-4">
+                <input type="checkbox" name="is_active" id="is_active" class="form-check-input"
+                       {% if mapping.is_active or not mapping %}checked{% endif %}>
+                <label for="is_active" class="form-check-label">Active</label>
+              </div>
+            </div>
+          </div>
+          <div class="mb-0">
+            <label for="description" class="form-label">Description</label>
+            <textarea name="description" id="description" class="form-control" rows="2"
+                      placeholder="Optional description...">{% if mapping %}{{ mapping.description }}{% elif form_data %}{{ form_data.description }}{% endif %}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- System Identifiers Card -->
+      <div class="card mb-4">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+          <h6 class="mb-0 text-dark">
+            <i class="bi bi-link-45deg text-secondary"></i> System Identifiers
+          </h6>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addIdentifier()">
+            <i class="bi bi-plus"></i> Add Identifier
+          </button>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small mb-3">
+            Define how this entity is identified in each connected system.
+          </p>
+
+          <div id="identifiersContainer">
+            <!-- Identifiers will be rendered here by JavaScript -->
+          </div>
+
+          <div id="noIdentifiers" class="text-center py-4 text-muted" style="display: none;">
+            <i class="bi bi-link-45deg" style="font-size: 2rem;"></i>
+            <p class="mt-2 mb-0">No system identifiers yet. Click "Add Identifier" to link this entity to a system.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hidden field for identifiers JSON -->
+      <input type="hidden" name="identifiers" id="identifiersJson" value="[]">
+
+      <!-- Actions -->
+      <div class="d-flex justify-content-between">
+        <a href="{% url 'mappings_list' %}" class="btn btn-outline-secondary">
+          <i class="bi bi-x"></i> Cancel
+        </a>
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg"></i> {% if mapping %}Save Changes{% else %}Create Mapping{% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Available systems for dropdown
+const availableSystems = [
+  {% for sys in configured_systems %}
+  { id: {{ sys.id }}, alias: '{{ sys.alias }}', name: '{{ sys.display_name }}' },
+  {% endfor %}
+];
+
+// Current identifiers
+let identifiers = [];
+
+// Load existing identifiers if editing
+{% if existing_identifiers_json %}
+identifiers = {{ existing_identifiers_json|safe }};
+{% endif %}
+
+function renderIdentifiers() {
+  const container = document.getElementById('identifiersContainer');
+  const noIdents = document.getElementById('noIdentifiers');
+
+  if (identifiers.length === 0) {
+    container.innerHTML = '';
+    noIdents.style.display = 'block';
+    updateIdentifiersJson();
+    return;
+  }
+
+  noIdents.style.display = 'none';
+  container.innerHTML = identifiers.map((ident, index) => `
+    <div class="card mb-2 border">
+      <div class="card-body py-2 px-3">
+        <div class="row align-items-center g-2">
+          <div class="col-md-3">
+            <select class="form-select form-select-sm" onchange="updateIdentifier(${index}, 'system_id', this.value)">
+              <option value="">Select system...</option>
+              ${availableSystems.map(sys => `
+                <option value="${sys.id}" ${ident.system_id == sys.id ? 'selected' : ''}>
+                  ${sys.name}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <input type="text" class="form-control form-control-sm" placeholder="Identifier value"
+                   value="${ident.identifier_value || ''}"
+                   onchange="updateIdentifier(${index}, 'identifier_value', this.value)">
+          </div>
+          <div class="col-md-3">
+            <input type="text" class="form-control form-control-sm" placeholder="Resource hint (optional)"
+                   value="${ident.resource_hint || ''}"
+                   onchange="updateIdentifier(${index}, 'resource_hint', this.value)">
+          </div>
+          <div class="col-md-2">
+            <div class="form-check">
+              <input type="checkbox" class="form-check-input" id="primary_${index}"
+                     ${ident.is_primary ? 'checked' : ''}
+                     onchange="updateIdentifier(${index}, 'is_primary', this.checked)">
+              <label class="form-check-label small" for="primary_${index}">Primary</label>
+            </div>
+          </div>
+          <div class="col-md-1 text-end">
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeIdentifier(${index})">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  updateIdentifiersJson();
+}
+
+function addIdentifier() {
+  identifiers.push({
+    system_id: '',
+    identifier_value: '',
+    resource_hint: '',
+    is_primary: false
+  });
+  renderIdentifiers();
+}
+
+function updateIdentifier(index, field, value) {
+  identifiers[index][field] = value;
+  updateIdentifiersJson();
+}
+
+function removeIdentifier(index) {
+  identifiers.splice(index, 1);
+  renderIdentifiers();
+}
+
+function updateIdentifiersJson() {
+  // Filter out empty identifiers and prepare for submission
+  const validIdentifiers = identifiers.filter(i => i.system_id && i.identifier_value);
+  document.getElementById('identifiersJson').value = JSON.stringify(validIdentifiers);
+}
+
+// Form validation
+document.getElementById('mappingForm').addEventListener('submit', function(e) {
+  updateIdentifiersJson();
+});
+
+// Initial render
+renderIdentifiers();
+</script>
+{% endblock %}

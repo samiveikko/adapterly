@@ -1,0 +1,258 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}MCP Category Debug{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; MCP Category Debug
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>MCP Category Debug</h1>
+
+{% if error %}
+<p class="errornote">{{ error }}</p>
+{% else %}
+
+<div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+    <h2 style="margin-top: 0;">Account: {{ account.name }}</h2>
+
+    <form method="get" style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
+        <div>
+            <label for="api_key_id" style="display: block; font-weight: bold; margin-bottom: 5px;">Agent (API Key):</label>
+            <select name="api_key_id" id="api_key_id" style="padding: 8px; min-width: 200px;">
+                <option value="">-- No agent selected --</option>
+                {% for key in api_keys %}
+                <option value="{{ key.id }}" {% if selected_api_key_id == key.id %}selected{% endif %}>
+                    {{ key.name }} ({{ key.key_prefix }}...)
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div>
+            <label for="project_identifier" style="display: block; font-weight: bold; margin-bottom: 5px;">Project:</label>
+            <select name="project_identifier" id="project_identifier" style="padding: 8px; min-width: 200px;">
+                <option value="">-- No project selected --</option>
+                {% for policy in project_policies %}
+                <option value="{{ policy.project_identifier }}" {% if selected_project == policy.project_identifier %}selected{% endif %}>
+                    {{ policy.name }} ({{ policy.project_identifier }})
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div>
+            <label for="user_id" style="display: block; font-weight: bold; margin-bottom: 5px;">User:</label>
+            <select name="user_id" id="user_id" style="padding: 8px; min-width: 200px;">
+                <option value="">-- No user selected --</option>
+                {% for policy in user_policies %}
+                <option value="{{ policy.user.id }}" {% if selected_user_id == policy.user.id %}selected{% endif %}>
+                    {{ policy.user.username }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <button type="submit" class="default" style="padding: 8px 20px;">Test</button>
+    </form>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+    <!-- Left column: Policies -->
+    <div>
+        <h2>Policies</h2>
+
+        <div style="margin-bottom: 15px; padding: 10px; background: #fff; border: 1px solid #ddd; border-radius: 5px;">
+            <h3 style="margin-top: 0; color: #417690;">Agent Policy</h3>
+            {% if agent_policy %}
+            <p><strong>Name:</strong> {{ agent_policy.name|default:"(unnamed)" }}</p>
+            <p><strong>Allowed Categories:</strong></p>
+            {% if agent_policy.allowed_categories %}
+            <ul>
+                {% for cat in agent_policy.allowed_categories %}
+                <li><code>{{ cat }}</code></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p style="color: green;"><em>All categories allowed (empty list)</em></p>
+            {% endif %}
+            {% elif selected_api_key_id %}
+            <p style="color: orange;"><em>No policy defined for this agent</em></p>
+            {% else %}
+            <p style="color: gray;"><em>Select an agent to see policy</em></p>
+            {% endif %}
+        </div>
+
+        <div style="margin-bottom: 15px; padding: 10px; background: #fff; border: 1px solid #ddd; border-radius: 5px;">
+            <h3 style="margin-top: 0; color: #417690;">Project Policy</h3>
+            {% if project_policy %}
+            <p><strong>Name:</strong> {{ project_policy.name }}</p>
+            <p><strong>Identifier:</strong> {{ project_policy.project_identifier }}
+                {% if project_policy_matched %}<span style="color: blue;">(pattern matched)</span>{% endif %}
+            </p>
+            <p><strong>Allowed Categories:</strong></p>
+            {% if project_policy.allowed_categories is None %}
+            <p style="color: gray;"><em>No restriction (null)</em></p>
+            {% elif project_policy.allowed_categories %}
+            <ul>
+                {% for cat in project_policy.allowed_categories %}
+                <li><code>{{ cat }}</code></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p style="color: green;"><em>All categories allowed (empty list)</em></p>
+            {% endif %}
+            {% elif selected_project %}
+            <p style="color: orange;"><em>No policy found for this project</em></p>
+            {% else %}
+            <p style="color: gray;"><em>Select a project to see policy</em></p>
+            {% endif %}
+        </div>
+
+        <div style="margin-bottom: 15px; padding: 10px; background: #fff; border: 1px solid #ddd; border-radius: 5px;">
+            <h3 style="margin-top: 0; color: #417690;">User Policy</h3>
+            {% if user_policy %}
+            <p><strong>User:</strong> {{ user_policy.user.username }}</p>
+            <p><strong>Allowed Categories:</strong></p>
+            {% if user_policy.allowed_categories is None %}
+            <p style="color: gray;"><em>No restriction (null)</em></p>
+            {% elif user_policy.allowed_categories %}
+            <ul>
+                {% for cat in user_policy.allowed_categories %}
+                <li><code>{{ cat }}</code></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p style="color: green;"><em>All categories allowed (empty list)</em></p>
+            {% endif %}
+            {% elif selected_user_id %}
+            <p style="color: orange;"><em>No policy found for this user</em></p>
+            {% else %}
+            <p style="color: gray;"><em>Select a user to see policy</em></p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Right column: Resolution & Tools -->
+    <div>
+        <h2>Resolution Result</h2>
+
+        <div style="margin-bottom: 15px; padding: 15px; background: {% if resolution.all_allowed %}#d4edda{% elif resolution.is_restricted %}#fff3cd{% else %}#d4edda{% endif %}; border: 1px solid #ddd; border-radius: 5px;">
+            {% if resolution.all_allowed %}
+            <h3 style="margin-top: 0; color: green;">All Categories Allowed</h3>
+            <p>No restrictions are applied. All tools are accessible.</p>
+            {% elif resolution.is_restricted %}
+            <h3 style="margin-top: 0; color: #856404;">Restricted Access</h3>
+            <p><strong>Effective Categories (intersection):</strong></p>
+            <ul>
+                {% for cat in resolution.effective_categories %}
+                <li><code>{{ cat }}</code></li>
+                {% empty %}
+                <li style="color: red;"><em>No categories allowed!</em></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <h3 style="margin-top: 0; color: green;">No Restrictions</h3>
+            {% endif %}
+        </div>
+
+        <h2>Tool Access Test</h2>
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background: #417690; color: white;">
+                    <th style="padding: 10px; text-align: left;">Tool</th>
+                    <th style="padding: 10px; text-align: left;">Categories</th>
+                    <th style="padding: 10px; text-align: center;">Access</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tool in tool_access %}
+                <tr style="background: {% cycle '#fff' '#f9f9f9' %}">
+                    <td style="padding: 8px; border-bottom: 1px solid #ddd;">
+                        <code>{{ tool.name }}</code>
+                    </td>
+                    <td style="padding: 8px; border-bottom: 1px solid #ddd;">
+                        {% for cat in tool.categories %}
+                        <span style="background: #e9ecef; padding: 2px 6px; border-radius: 3px; margin-right: 3px; font-size: 12px;">{{ cat }}</span>
+                        {% empty %}
+                        <em style="color: gray;">uncategorized</em>
+                        {% endfor %}
+                    </td>
+                    <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center;">
+                        {% if tool.allowed %}
+                        <span style="color: green; font-weight: bold;">ALLOWED</span>
+                        {% else %}
+                        <span style="color: red; font-weight: bold;">BLOCKED</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<h2 style="margin-top: 30px;">Available Categories</h2>
+<table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+    <thead>
+        <tr style="background: #417690; color: white;">
+            <th style="padding: 10px; text-align: left;">Key</th>
+            <th style="padding: 10px; text-align: left;">Name</th>
+            <th style="padding: 10px; text-align: left;">Risk Level</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for cat in categories %}
+        <tr style="background: {% cycle '#fff' '#f9f9f9' %}">
+            <td style="padding: 8px; border-bottom: 1px solid #ddd;"><code>{{ cat.key }}</code></td>
+            <td style="padding: 8px; border-bottom: 1px solid #ddd;">{{ cat.name }}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #ddd;">
+                <span style="color: {% if cat.risk_level == 'low' %}green{% elif cat.risk_level == 'medium' %}orange{% else %}red{% endif %};">
+                    {{ cat.get_risk_level_display }}
+                </span>
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="3" style="padding: 8px; text-align: center; color: gray;">
+                No categories defined. Run <code>python manage.py sync_tool_categories</code>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Tool Mappings</h2>
+<table style="width: 100%; border-collapse: collapse;">
+    <thead>
+        <tr style="background: #417690; color: white;">
+            <th style="padding: 10px; text-align: left;">Pattern</th>
+            <th style="padding: 10px; text-align: left;">Category</th>
+            <th style="padding: 10px; text-align: center;">Auto</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for mapping in mappings %}
+        <tr style="background: {% cycle '#fff' '#f9f9f9' %}">
+            <td style="padding: 8px; border-bottom: 1px solid #ddd;"><code>{{ mapping.tool_key_pattern }}</code></td>
+            <td style="padding: 8px; border-bottom: 1px solid #ddd;">{{ mapping.category.name }} (<code>{{ mapping.category.key }}</code>)</td>
+            <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center;">
+                {% if mapping.is_auto %}Yes{% else %}No{% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="3" style="padding: 8px; text-align: center; color: gray;">
+                No mappings defined. Run <code>python manage.py sync_tool_categories</code>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% endif %}
+{% endblock %}

@@ -1,0 +1,25 @@
+[Unit]
+Description=FastAPI MCP Server for Adapterly
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/workflow-server
+Environment="PATH=/var/www/workflow-server/venv/bin"
+ExecStart=/var/www/workflow-server/venv/bin/uvicorn fastapi_app.main:app --host 127.0.0.1 --port 8001 --workers 2
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fastapi
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

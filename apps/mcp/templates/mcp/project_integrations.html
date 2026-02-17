@@ -1,0 +1,129 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}Integrations - {{ project.name }} - {{ active_account.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item"><a href="{% url 'mcp:dashboard' %}">MCP Gateway</a></li>
+                <li class="breadcrumb-item">{{ project.name }}</li>
+                <li class="breadcrumb-item active">Integrations</li>
+            </ol>
+        </nav>
+        <h2 class="mb-1">
+            <i class="bi bi-plug text-secondary"></i> Project Integrations
+        </h2>
+        <p class="text-muted mb-0">Manage system connections for <strong>{{ project.name }}</strong></p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'mcp:project_integration_add' project.id %}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> Add Integration
+        </a>
+        <a href="{% url 'mcp:dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+{% if integrations %}
+<div class="row">
+    {% for integration in integrations %}
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <i class="bi bi-plug text-info"></i>
+                    {{ integration.system.display_name }}
+                </h6>
+                {% if not integration.is_enabled %}
+                <span class="badge bg-secondary">Disabled</span>
+                {% else %}
+                <span class="badge bg-success">Active</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <small class="text-muted d-block mb-1">System alias:</small>
+                    <code>{{ integration.system.alias }}</code>
+                </div>
+
+                <div class="mb-2">
+                    <small class="text-muted d-block mb-1">Credentials:</small>
+                    {% if integration.credential_source == 'account' %}
+                    <span class="badge bg-light text-dark border">Account (shared)</span>
+                    {% else %}
+                    <span class="badge bg-info">Project-specific</span>
+                    {% endif %}
+                </div>
+
+                {% if integration.external_id %}
+                <div class="mb-2">
+                    <small class="text-muted d-block mb-1">External ID:</small>
+                    <code>{{ integration.external_id }}</code>
+                </div>
+                {% endif %}
+
+                {% if integration.notes %}
+                <div class="mb-2">
+                    <small class="text-muted d-block mb-1">Notes:</small>
+                    <span class="small">{{ integration.notes }}</span>
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-footer bg-white border-top">
+                <div class="d-flex justify-content-between">
+                    <a href="{% url 'mcp:project_integration_edit' project.id integration.id %}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-pencil"></i> Edit
+                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-danger"
+                            onclick="removeIntegration({{ integration.id }}, '{{ integration.system.display_name }}')">
+                        <i class="bi bi-trash"></i> Remove
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card shadow-sm border-0">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-plug text-muted" style="font-size: 4rem;"></i>
+        <h4 class="mt-3">No Integrations</h4>
+        <p class="text-muted">Add system integrations to enable MCP tools for this project.</p>
+        <a href="{% url 'mcp:project_integration_add' project.id %}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> Add Integration
+        </a>
+    </div>
+</div>
+{% endif %}
+
+<script>
+async function removeIntegration(integrationId, systemName) {
+    if (!confirm(`Remove integration with "${systemName}"?`)) return;
+
+    try {
+        const response = await fetch(`/mcp/projects/{{ project.id }}/integrations/${integrationId}/remove/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error removing integration');
+    }
+}
+</script>
+{% endblock %}
