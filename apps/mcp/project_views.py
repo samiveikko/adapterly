@@ -247,8 +247,8 @@ def project_integration_add_view(request, slug):
 
     available_systems = (
         System.objects.filter(
-            account_systems__account=active_account,
-            account_systems__is_enabled=True,
+            account_configs__account=active_account,
+            account_configs__is_enabled=True,
             is_active=True,
         )
         .exclude(id__in=existing_system_ids)
