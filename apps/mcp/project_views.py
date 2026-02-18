@@ -127,10 +127,7 @@ def project_detail(request, slug):
 
     integrations = ProjectIntegration.objects.filter(project=project).select_related("system")
     api_keys = MCPApiKey.objects.filter(project=project)
-    log_count = MCPAuditLog.objects.filter(
-        account=active_account,
-        session_id__in=MCPApiKey.objects.filter(project=project).values_list("id", flat=True),
-    ).count()
+    log_count = MCPAuditLog.objects.filter(account=active_account).count()
 
     context = {
         "active_account": active_account,
