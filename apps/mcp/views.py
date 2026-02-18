@@ -42,29 +42,8 @@ def _sanitize_tool_name(name):
 
 @login_required
 def mcp_dashboard(request):
-    """MCP management dashboard."""
-    active_account = get_active_account(request)
-    active_account_user = get_active_account_user(request)
-
-    if not active_account:
-        messages.error(request, "No active account")
-        return redirect("index")
-
-    if not active_account_user.is_admin:
-        messages.error(request, "Admin access required")
-        return redirect("index")
-
-    # Get MCP data
-    api_keys = MCPApiKey.objects.filter(account=active_account).select_related("project")
-
-    context = {
-        "active_account": active_account,
-        "active_account_user": active_account_user,
-        "api_keys": api_keys,
-        "api_keys_count": api_keys.count(),
-    }
-
-    return render(request, "mcp/dashboard.html", context)
+    """MCP management dashboard - redirects to projects."""
+    return redirect("projects:list")
 
 
 @login_required

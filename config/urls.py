@@ -24,6 +24,8 @@ urlpatterns = [
     path("systems/", include("apps.systems.urls")),
     # Help
     path("help/", include("apps.help.urls")),
+    # Projects
+    path("projects/", include("apps.mcp.project_urls")),
     # MCP Gateway
     path("mcp/", include("apps.mcp.urls")),
     path("mcp/v1/", mcp_endpoint, name="mcp-protocol"),  # MCP Streamable HTTP

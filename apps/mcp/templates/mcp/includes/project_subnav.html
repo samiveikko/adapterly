@@ -1,0 +1,51 @@
+<!-- Project breadcrumb + sub-navigation tabs -->
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-1">
+        <li class="breadcrumb-item"><a href="{% url 'projects:list' %}">Projects</a></li>
+        <li class="breadcrumb-item">
+            <a href="{% url 'projects:detail' project.slug %}">{{ project.name }}</a>
+        </li>
+        {% if active_tab != "overview" %}
+        <li class="breadcrumb-item active">
+            {% if active_tab == "integrations" %}Integrations
+            {% elif active_tab == "api_keys" %}API Keys
+            {% elif active_tab == "tools" %}Tools
+            {% elif active_tab == "logs" %}Logs
+            {% endif %}
+        </li>
+        {% endif %}
+    </ol>
+</nav>
+
+<ul class="nav nav-pills mb-4">
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'overview' %}active{% endif %}"
+           href="{% url 'projects:detail' project.slug %}">
+            <i class="bi bi-speedometer2 me-1"></i>Overview
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'integrations' %}active{% endif %}"
+           href="{% url 'projects:integrations' project.slug %}">
+            <i class="bi bi-plug me-1"></i>Integrations
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'api_keys' %}active{% endif %}"
+           href="{% url 'projects:api_keys' project.slug %}">
+            <i class="bi bi-key me-1"></i>API Keys
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'tools' %}active{% endif %}"
+           href="{% url 'projects:tools' project.slug %}">
+            <i class="bi bi-tools me-1"></i>Tools
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'logs' %}active{% endif %}"
+           href="{% url 'projects:logs' project.slug %}">
+            <i class="bi bi-journal-text me-1"></i>Logs
+        </a>
+    </li>
+</ul>

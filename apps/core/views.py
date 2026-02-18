@@ -1,5 +1,5 @@
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect
 
 
 def landing_page(request):
@@ -9,4 +9,4 @@ def landing_page(request):
 
 @login_required
 def index(request):
-    return render(request, "core/index.html")
+    return redirect("projects:list")
