@@ -140,8 +140,7 @@
     <div class="card mb-4">
       <div class="card-header bg-white border-bottom">
         <h5 class="mb-0 text-dark">
-          <i class="bi bi-plus-circle text-secondary"></i> Available Systems
-          <span class="badge bg-secondary ms-2">{{ total_unconfigured }}</span>
+          <i class="bi bi-grid text-secondary"></i> All Systems
         </h5>
       </div>
       <div class="card-body p-2">
@@ -182,14 +181,16 @@
                          data-name="{{ system.display_name|lower }}"
                          data-alias="{{ system.alias|lower }}"
                          {% if forloop.counter > 4 %}style="display: none;" data-hidden="true"{% endif %}>
-                      <div class="d-flex align-items-center p-2 rounded hover-bg-light border">
+                      <div class="d-flex align-items-center p-2 rounded hover-bg-light border {% if system.is_configured %}border-success bg-success bg-opacity-10{% endif %}">
                         <div class="flex-shrink-0 me-2">
-                          <i class="bi bi-{{ system.icon|default:'gear' }} text-secondary fs-5"></i>
+                          <i class="bi bi-{{ system.icon|default:'gear' }} {% if system.is_configured %}text-success{% else %}text-secondary{% endif %} fs-5"></i>
                         </div>
                         <div class="flex-grow-1 min-width-0">
                           <div class="fw-medium text-dark text-truncate">
                             {{ system.display_name }}
-                            {% if system.is_confirmed %}
+                            {% if system.is_configured %}
+                              <i class="bi bi-check-circle-fill text-success" title="Connected to your account"></i>
+                            {% elif system.is_confirmed %}
                               <i class="bi bi-shield-check text-success" title="Confirmed working"></i>
                             {% else %}
                               <i class="bi bi-question-circle text-muted" title="Not yet tested"></i>
@@ -198,10 +199,17 @@
                           <small class="text-muted text-truncate d-block">{{ system.description|truncatewords:6 }}</small>
                         </div>
                         {% if active_account_user.is_admin %}
-                        <a href="{% url 'configure_system' system.id %}"
-                           class="btn btn-sm btn-outline-primary flex-shrink-0 ms-2">
-                          <i class="bi bi-plus"></i>
-                        </a>
+                          {% if system.is_configured %}
+                          <a href="{% url 'configure_system' system.id %}"
+                             class="btn btn-sm btn-outline-success flex-shrink-0 ms-2" title="Configure">
+                            <i class="bi bi-gear"></i>
+                          </a>
+                          {% else %}
+                          <a href="{% url 'configure_system' system.id %}"
+                             class="btn btn-sm btn-outline-primary flex-shrink-0 ms-2" title="Add">
+                            <i class="bi bi-plus"></i>
+                          </a>
+                          {% endif %}
                         {% endif %}
                       </div>
                     </div>

@@ -76,17 +76,18 @@ def systems_dashboard(request):
     )
 
     # Build list of unconfigured systems
-    configured_system_ids = configured_systems.values_list("system_id", flat=True)
+    configured_system_ids = set(configured_systems.values_list("system_id", flat=True))
     unconfigured_systems = available_systems.exclude(id__in=configured_system_ids)
 
-    # Group unconfigured systems by category
+    # Group ALL systems by category (mark configured ones)
     # Priority: 1) industry (if set), 2) system_type
     categories = defaultdict(lambda: {"systems": [], "icon": "grid", "priority": 99})
 
     # Get active industry templates
     industries = {t.id: t for t in IndustryTemplate.objects.filter(is_active=True)}
 
-    for system in unconfigured_systems:
+    for system in available_systems:
+        system.is_configured = system.id in configured_system_ids
         if system.industry_id and system.industry_id in industries:
             # Use industry category
             industry = industries[system.industry_id]
