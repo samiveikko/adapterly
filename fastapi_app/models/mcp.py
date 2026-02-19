@@ -70,7 +70,7 @@ class Project(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    account = relationship("Account", back_populates="projects")
+    account = relationship("Account", back_populates="projects", foreign_keys=[account_id])
     api_keys = relationship("MCPApiKey", back_populates="project")
     mappings = relationship("ProjectMapping", back_populates="project", cascade="all, delete-orphan")
     integrations = relationship("ProjectIntegration", back_populates="project", cascade="all, delete-orphan")

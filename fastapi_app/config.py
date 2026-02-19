@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # Database (defaults match Django settings.py)
     db_engine: str = "django.db.backends.sqlite3"
-    db_name: str = "/root/code/workflow-server/db.sqlite3"
+    db_name: str = "/root/code/adapterly/db.sqlite3"
     db_user: str = ""
     db_password: str = ""
     db_host: str = ""
