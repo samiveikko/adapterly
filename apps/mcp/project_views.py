@@ -22,6 +22,7 @@ from apps.mcp.models import (
     Project,
     ProjectIntegration,
 )
+from apps.systems.models import EntityMapping, EntityType, SystemEntityIdentifier
 
 
 def _get_project_for_account(request, slug):
@@ -31,6 +32,43 @@ def _get_project_for_account(request, slug):
         return None, None
     project = get_object_or_404(Project, slug=slug, account=active_account)
     return active_account, project
+
+
+def _ensure_project_mapping(project):
+    """Get-or-create an EntityMapping for this project and link it."""
+    entity_type, _ = EntityType.objects.get_or_create(
+        name="project",
+        defaults={"display_name": "Project", "icon": "bi-folder"},
+    )
+    mapping, created = EntityMapping.objects.get_or_create(
+        account=project.account,
+        entity_type=entity_type,
+        canonical_name=project.name,
+        defaults={"canonical_id": project.slug},
+    )
+    if not created and mapping.canonical_id != project.slug:
+        mapping.canonical_id = project.slug
+        mapping.save(update_fields=["canonical_id"])
+    if project.entity_mapping_id != mapping.id:
+        project.entity_mapping = mapping
+        project.save(update_fields=["entity_mapping"])
+    return mapping
+
+
+def _sync_integration_identifier(mapping, integration):
+    """Create/update/delete a SystemEntityIdentifier based on integration.external_id."""
+    system = integration.system
+    if integration.external_id:
+        SystemEntityIdentifier.objects.update_or_create(
+            mapping=mapping,
+            system=system,
+            defaults={
+                "identifier_value": integration.external_id,
+                "resource_hint": "projects",
+            },
+        )
+    else:
+        SystemEntityIdentifier.objects.filter(mapping=mapping, system=system).delete()
 
 
 # ============================================================================
@@ -104,6 +142,7 @@ def project_create(request):
                 slug=slug,
                 description=description,
             )
+            _ensure_project_mapping(project)
             messages.success(request, f"Project '{name}' created")
             return redirect("projects:detail", slug=project.slug)
 
@@ -129,6 +168,10 @@ def project_detail(request, slug):
     api_keys = MCPApiKey.objects.filter(project=project)
     log_count = MCPAuditLog.objects.filter(account=active_account).count()
 
+    mapping_identifiers = []
+    if project.entity_mapping:
+        mapping_identifiers = project.entity_mapping.identifiers.select_related("system")
+
     context = {
         "active_account": active_account,
         "active_account_user": active_account_user,
@@ -138,6 +181,7 @@ def project_detail(request, slug):
         "integration_count": integrations.count(),
         "api_key_count": api_keys.count(),
         "log_count": log_count,
+        "mapping_identifiers": mapping_identifiers,
         "active_tab": "overview",
     }
 
@@ -166,10 +210,14 @@ def project_edit(request, slug):
         if not name:
             messages.error(request, "Project name is required")
         else:
+            old_name = project.name
             project.name = name
             project.description = description
             project.is_active = is_active
             project.save()
+            if project.entity_mapping and old_name != name:
+                project.entity_mapping.canonical_name = name
+                project.entity_mapping.save(update_fields=["canonical_name"])
             messages.success(request, f"Project '{name}' updated")
             return redirect("projects:detail", slug=project.slug)
 
@@ -198,6 +246,8 @@ def project_delete(request, slug):
         return redirect("projects:detail", slug=slug)
 
     project_name = project.name
+    if project.entity_mapping:
+        project.entity_mapping.delete()
     project.delete()
     messages.success(request, f"Project '{project_name}' deleted")
     return redirect("projects:list")
@@ -287,7 +337,7 @@ def project_integration_add_view(request, slug):
                     f"Integration created but may not work until credentials are configured.",
                 )
 
-            ProjectIntegration.objects.create(
+            integration = ProjectIntegration.objects.create(
                 project=project,
                 system=system,
                 credential_source=credential_source,
@@ -295,6 +345,8 @@ def project_integration_add_view(request, slug):
                 notes=notes,
                 is_enabled=True,
             )
+            mapping = _ensure_project_mapping(project)
+            _sync_integration_identifier(mapping, integration)
             messages.success(request, f"Integration with {system.display_name} added")
             return redirect("projects:integrations", slug=slug)
 
@@ -333,6 +385,9 @@ def project_integration_edit_view(request, slug, integration_id):
         integration.notes = notes
         integration.save()
 
+        mapping = _ensure_project_mapping(project)
+        _sync_integration_identifier(mapping, integration)
+
         messages.success(request, f"Integration with {integration.system.display_name} updated")
         return redirect("projects:integrations", slug=slug)
 
@@ -359,7 +414,10 @@ def project_integration_remove_view(request, slug, integration_id):
 
     integration = get_object_or_404(ProjectIntegration, id=integration_id, project=project)
 
-    system_name = integration.system.display_name
+    system = integration.system
+    system_name = system.display_name
+    if project.entity_mapping:
+        SystemEntityIdentifier.objects.filter(mapping=project.entity_mapping, system=system).delete()
     integration.delete()
 
     return JsonResponse({"success": True, "message": f"Integration with {system_name} removed"})
@@ -409,7 +467,11 @@ def _sanitize_tool_name(name):
 
 @login_required
 def project_tools_view(request, slug):
-    """Tools available for a specific project (from its integrations)."""
+    """Tools available for a specific project (from its integrations).
+
+    GET: display tools with selection checkboxes.
+    POST: save selected tools per integration (admin only).
+    """
     active_account, project = _get_project_for_account(request, slug)
     active_account_user = get_active_account_user(request)
 
@@ -421,9 +483,24 @@ def project_tools_view(request, slug):
 
     from apps.systems.models import Action
 
+    # Handle POST: save tool selections
+    if request.method == "POST" and active_account_user and active_account_user.is_admin:
+        for integration in integrations:
+            system_alias = integration.system.alias
+            select_mode = request.POST.get(f"mode_{system_alias}", "all")
+            if select_mode == "all":
+                integration.allowed_actions = None
+            else:
+                selected = request.POST.getlist(f"tools_{system_alias}")
+                integration.allowed_actions = selected if selected else []
+            integration.save(update_fields=["allowed_actions"])
+        messages.success(request, "Tool selection saved")
+        return redirect("projects:tools", slug=slug)
+
     tool_groups = []
     for integration in integrations:
         system = integration.system
+        allowed = integration.allowed_actions  # None = all, list = specific
         actions = Action.objects.filter(
             resource__interface__system=system,
             is_mcp_enabled=True,
@@ -454,24 +531,30 @@ def project_tools_view(request, slug):
                 tool_type = "system_write"
 
             description = action.description or f"{action.name} on {system.display_name} {resource.name}"
+            is_enabled = allowed is None or tool_name in allowed
             tools.append(
                 {
                     "name": tool_name,
                     "description": description[:200],
                     "tool_type": tool_type,
+                    "is_enabled": is_enabled,
                 }
             )
 
         if tools:
+            enabled_count = sum(1 for t in tools if t["is_enabled"])
             tool_groups.append(
                 {
                     "system": system.display_name,
                     "system_alias": system.alias,
                     "tools": tools,
+                    "select_mode": "all" if allowed is None else "custom",
+                    "enabled_count": enabled_count,
                 }
             )
 
     total_tools = sum(len(g["tools"]) for g in tool_groups)
+    enabled_tools = sum(g["enabled_count"] for g in tool_groups)
 
     context = {
         "active_account": active_account,
@@ -479,6 +562,7 @@ def project_tools_view(request, slug):
         "project": project,
         "tool_groups": tool_groups,
         "total_tools": total_tools,
+        "enabled_tools": enabled_tools,
         "active_tab": "tools",
     }
 

@@ -73,12 +73,22 @@
             <!-- Available Tools -->
             <div class="card shadow-sm border-0 mb-4">
                 <div class="card-header bg-white border-bottom">
-                    <h6 class="mb-0"><i class="bi bi-tools text-secondary"></i> Available Tools</h6>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0"><i class="bi bi-tools text-secondary"></i> Available Tools</h6>
+                        <span class="badge bg-light text-dark" id="toolCountBadge"></span>
+                    </div>
                 </div>
-                <div class="card-body">
+                <div class="card-body pb-0">
                     <div class="alert alert-info small mb-3">
                         <i class="bi bi-info-circle"></i>
                         Select specific tools to restrict access. Leave all <strong>unchecked</strong> to allow all project tools.
+                    </div>
+
+                    <!-- Search -->
+                    <div class="input-group mb-3" id="toolSearchWrap" style="display:none;">
+                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" id="toolSearch"
+                               placeholder="Search tools..." oninput="filterToolCheckboxes()">
                     </div>
 
                     <div id="toolSelectionLoading" class="text-center py-3">
@@ -86,12 +96,13 @@
                         <span class="text-muted ms-2">Loading tools...</span>
                     </div>
 
-                    <div id="toolSelectionContent"></div>
+                    <div id="toolSelectionContent" style="max-height: 40vh; overflow: auto; margin: 0 -1rem; padding: 0 1rem;"></div>
                 </div>
             </div>
 
-            <!-- Actions -->
-            <div class="d-flex justify-content-between">
+            <!-- Actions (sticky bottom bar) -->
+            <div class="d-flex justify-content-between bg-white border-top py-3 mt-3"
+                 style="position: sticky; bottom: 0; z-index: 10;">
                 <a href="{% url 'mcp:api_keys' %}" class="btn btn-outline-secondary">
                     <i class="bi bi-arrow-left"></i> Cancel
                 </a>
@@ -264,51 +275,91 @@ function renderToolSelection(systems, container) {
         return;
     }
 
+    // Show search bar
+    document.getElementById('toolSearchWrap').style.display = '';
+
+    let totalTools = 0;
     let html = '';
     for (const sys of systems) {
         html += `
-        <div class="card mb-2">
+        <div class="card mb-2 system-card" data-system="${sys.system_alias}">
             <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
                 <strong>${sys.system}</strong>
-                <button type="button" class="btn btn-sm btn-outline-secondary"
-                        onclick="toggleSystemTools('${sys.system_alias}')">
-                    Select All
-                </button>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-secondary sys-count" data-system="${sys.system_alias}"></span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                            onclick="toggleSystemTools('${sys.system_alias}')">
+                        Select All
+                    </button>
+                </div>
             </div>
-            <div class="card-body py-2">
-                <div class="row">`;
+            <div class="card-body py-2">`;
 
         for (const tool of sys.tools) {
+            totalTools++;
             const badgeClass = tool.tool_type === 'system_write' ? 'bg-warning text-dark' : 'bg-success';
             const typeLabel = tool.tool_type === 'system_write' ? 'write' : 'read';
             const isChecked = currentAllowedTools.includes(tool.name) ? 'checked' : '';
+            const desc = (tool.description || '').replace(/"/g, '&quot;');
             html += `
-                    <div class="col-md-6 mb-1">
-                        <div class="form-check">
-                            <input class="form-check-input tool-checkbox" type="checkbox"
-                                   value="${tool.name}" data-system="${sys.system_alias}"
-                                   id="tool_${tool.name}" ${isChecked}>
-                            <label class="form-check-label small" for="tool_${tool.name}">
-                                <code>${tool.name}</code>
-                                <span class="badge ${badgeClass} ms-1">${typeLabel}</span>
-                            </label>
-                        </div>
-                    </div>`;
+                <div class="form-check tool-item mb-1" data-name="${tool.name.toLowerCase()}" data-desc="${desc.toLowerCase()}">
+                    <input class="form-check-input tool-checkbox" type="checkbox"
+                           value="${tool.name}" data-system="${sys.system_alias}"
+                           id="tool_${tool.name}" ${isChecked}
+                           onchange="updateToolCount()">
+                    <label class="form-check-label small d-flex align-items-center" for="tool_${tool.name}"
+                           style="min-width:0;">
+                        <code class="text-truncate" style="max-width: calc(100% - 50px);"
+                              title="${tool.name}">${tool.name}</code>
+                        <span class="badge ${badgeClass} ms-1 flex-shrink-0">${typeLabel}</span>
+                    </label>
+                </div>`;
         }
 
         html += `
-                </div>
             </div>
         </div>`;
     }
 
     container.innerHTML = html;
+    updateToolCount();
+}
+
+function filterToolCheckboxes() {
+    const q = document.getElementById('toolSearch').value.toLowerCase();
+    document.querySelectorAll('.system-card').forEach(card => {
+        let visible = 0;
+        card.querySelectorAll('.tool-item').forEach(item => {
+            const match = !q || item.dataset.name.includes(q) || item.dataset.desc.includes(q);
+            item.style.display = match ? '' : 'none';
+            if (match) visible++;
+        });
+        card.style.display = visible > 0 ? '' : 'none';
+    });
+}
+
+function updateToolCount() {
+    const total = document.querySelectorAll('.tool-checkbox').length;
+    const checked = document.querySelectorAll('.tool-checkbox:checked').length;
+    const badge = document.getElementById('toolCountBadge');
+    if (badge) {
+        badge.textContent = checked > 0 ? checked + ' / ' + total + ' selected' : total + ' tools';
+    }
+    // Per-system counts
+    document.querySelectorAll('.sys-count').forEach(el => {
+        const alias = el.dataset.system;
+        const sysCbs = document.querySelectorAll(`.tool-checkbox[data-system="${alias}"]`);
+        const sysChecked = document.querySelectorAll(`.tool-checkbox[data-system="${alias}"]:checked`);
+        el.textContent = sysChecked.length + '/' + sysCbs.length;
+        el.style.display = sysChecked.length > 0 ? '' : 'none';
+    });
 }
 
 function toggleSystemTools(systemAlias) {
     const checkboxes = document.querySelectorAll(`.tool-checkbox[data-system="${systemAlias}"]`);
     const allChecked = Array.from(checkboxes).every(cb => cb.checked);
     checkboxes.forEach(cb => cb.checked = !allChecked);
+    updateToolCount();
 }
 
 function getSelectedTools() {

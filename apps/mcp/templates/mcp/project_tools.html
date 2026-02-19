@@ -10,54 +10,127 @@
         <h2 class="mb-1">
             <i class="bi bi-tools text-secondary"></i> Tools
         </h2>
-        <p class="text-muted mb-0">
-            {{ total_tools }} tool{{ total_tools|pluralize }} available from
+        <p class="text-muted mb-0" id="toolSummaryText">
+            {{ enabled_tools }} of {{ total_tools }} tool{{ total_tools|pluralize }} enabled from
             {{ tool_groups|length }} system{{ tool_groups|length|pluralize }}
             in <strong>{{ project.name }}</strong>
         </p>
     </div>
+    {% if active_account_user and active_account_user.is_admin and tool_groups %}
+    <button type="submit" form="toolForm" class="btn btn-primary">
+        <i class="bi bi-save"></i> Save
+    </button>
+    {% endif %}
 </div>
 
 {% if tool_groups %}
-{% for group in tool_groups %}
-<div class="card shadow-sm border-0 mb-4">
-    <div class="card-header bg-white border-bottom">
-        <h6 class="mb-0">
-            <i class="bi bi-plug text-info"></i>
-            {{ group.system }}
-            <span class="badge bg-light text-dark ms-2">{{ group.tools|length }} tools</span>
-        </h6>
-    </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Tool Name</th>
-                        <th>Type</th>
-                        <th>Description</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for tool in group.tools %}
-                    <tr>
-                        <td><code>{{ tool.name }}</code></td>
-                        <td>
-                            {% if tool.tool_type == 'system_write' %}
-                            <span class="badge bg-warning text-dark">write</span>
-                            {% else %}
-                            <span class="badge bg-success">read</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-muted small">{{ tool.description }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+
+<!-- Selected tools summary panel -->
+<div class="card shadow-sm border-0 mb-3" id="selectedPanel">
+    <div class="card-body py-2">
+        <div class="d-flex align-items-start gap-2">
+            <span class="text-muted small mt-1 flex-shrink-0">Enabled:</span>
+            <div id="selectedChips" class="flex-grow-1"></div>
         </div>
     </div>
 </div>
-{% endfor %}
+
+<!-- Search & filter bar -->
+<div class="row g-2 mb-3">
+    <div class="col-md-8">
+        <div class="input-group">
+            <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+            <input type="text" class="form-control" id="toolSearch"
+                   placeholder="Search tools..." oninput="filterTools()">
+        </div>
+    </div>
+    <div class="col-md-4">
+        <select class="form-select" id="systemFilter" onchange="filterTools()">
+            <option value="">All systems</option>
+            {% for group in tool_groups %}
+            <option value="{{ group.system_alias }}">{{ group.system }} ({{ group.tools|length }})</option>
+            {% endfor %}
+        </select>
+    </div>
+</div>
+
+<form method="post" id="toolForm">
+    {% csrf_token %}
+
+    {% for group in tool_groups %}
+    <div class="card shadow-sm border-0 mb-3 system-group" data-system="{{ group.system_alias }}">
+        <div class="card-header bg-white border-bottom py-2">
+            <div class="d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <i class="bi bi-plug text-info"></i>
+                    {{ group.system }}
+                    <span class="badge bg-light text-dark ms-1 count-badge" data-system="{{ group.system_alias }}">{{ group.enabled_count }}/{{ group.tools|length }}</span>
+                </h6>
+                {% if active_account_user and active_account_user.is_admin %}
+                <div class="btn-group btn-group-sm" role="group">
+                    <input type="radio" class="btn-check mode-radio" name="mode_{{ group.system_alias }}"
+                           id="mode_all_{{ group.system_alias }}" value="all"
+                           data-system="{{ group.system_alias }}"
+                           {% if group.select_mode == 'all' %}checked{% endif %}
+                           onchange="setMode('{{ group.system_alias }}', 'all')">
+                    <label class="btn btn-outline-secondary" for="mode_all_{{ group.system_alias }}">All</label>
+
+                    <input type="radio" class="btn-check mode-radio" name="mode_{{ group.system_alias }}"
+                           id="mode_custom_{{ group.system_alias }}" value="custom"
+                           data-system="{{ group.system_alias }}"
+                           {% if group.select_mode == 'custom' %}checked{% endif %}
+                           onchange="setMode('{{ group.system_alias }}', 'custom')">
+                    <label class="btn btn-outline-secondary" for="mode_custom_{{ group.system_alias }}">Custom</label>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            {% if active_account_user and active_account_user.is_admin %}
+                            <th style="width: 36px;"></th>
+                            {% endif %}
+                            <th>Tool</th>
+                            <th style="width: 60px;">Type</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tool in group.tools %}
+                        <tr class="tool-row" data-tool="{{ tool.name }}" data-system="{{ group.system_alias }}" data-type="{{ tool.tool_type }}">
+                            {% if active_account_user and active_account_user.is_admin %}
+                            <td class="text-center">
+                                <input class="form-check-input tool-cb"
+                                       type="checkbox"
+                                       name="tools_{{ group.system_alias }}"
+                                       value="{{ tool.name }}"
+                                       data-system="{{ group.system_alias }}"
+                                       {% if tool.is_enabled %}checked{% endif %}
+                                       {% if group.select_mode == 'all' %}disabled{% endif %}
+                                       onchange="onToolToggle(this)">
+                            </td>
+                            {% endif %}
+                            <td><code class="small">{{ tool.name }}</code></td>
+                            <td>
+                                {% if tool.tool_type == 'system_write' %}
+                                <span class="badge bg-warning text-dark">write</span>
+                                {% else %}
+                                <span class="badge bg-success">read</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-muted small text-truncate" style="max-width: 300px;">{{ tool.description }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</form>
 {% else %}
 <div class="card shadow-sm border-0">
     <div class="card-body text-center py-5">
@@ -72,4 +145,126 @@
     </div>
 </div>
 {% endif %}
+
+<script>
+/* ── Search & system filter ── */
+function filterTools() {
+    const q = document.getElementById('toolSearch').value.toLowerCase();
+    const sys = document.getElementById('systemFilter').value;
+
+    document.querySelectorAll('.system-group').forEach(group => {
+        const groupSys = group.dataset.system;
+        if (sys && groupSys !== sys) { group.style.display = 'none'; return; }
+        group.style.display = '';
+
+        let visible = 0;
+        group.querySelectorAll('.tool-row').forEach(row => {
+            const name = row.dataset.tool.toLowerCase();
+            const desc = row.querySelector('td:last-child')?.textContent.toLowerCase() || '';
+            const match = (!q || name.includes(q) || desc.includes(q));
+            row.style.display = match ? '' : 'none';
+            if (match) visible++;
+        });
+        if (q && visible === 0) group.style.display = 'none';
+    });
+}
+
+/* ── Mode toggle (All / Custom) ── */
+function setMode(alias, mode) {
+    const cbs = document.querySelectorAll(`.tool-cb[data-system="${alias}"]`);
+    if (mode === 'all') {
+        cbs.forEach(cb => { cb.disabled = true; cb.checked = true; });
+    } else {
+        cbs.forEach(cb => { cb.disabled = false; });
+    }
+    refreshAll();
+}
+
+/* ── Checkbox change ── */
+function onToolToggle(cb) {
+    refreshAll();
+}
+
+/* ── Click chip to uncheck ── */
+function uncheckTool(toolName, alias) {
+    const modeRadio = document.getElementById('mode_custom_' + alias);
+    if (modeRadio && !modeRadio.checked) {
+        modeRadio.checked = true;
+        setMode(alias, 'custom');
+    }
+    const cb = document.querySelector(`.tool-cb[value="${toolName}"]`);
+    if (cb && !cb.disabled) { cb.checked = false; refreshAll(); }
+}
+
+/* ── Master refresh: chips, badges, row styling ── */
+function refreshAll() {
+    const chipsEl = document.getElementById('selectedChips');
+    chipsEl.innerHTML = '';
+    let totalEnabled = 0;
+    let totalAll = 0;
+
+    document.querySelectorAll('.system-group').forEach(group => {
+        const alias = group.dataset.system;
+        const sysName = group.querySelector('h6').textContent.trim().split('\n')[0].trim();
+        const cbs = group.querySelectorAll('.tool-cb');
+        const badge = group.querySelector('.count-badge');
+        const isAllMode = document.getElementById('mode_all_' + alias)?.checked;
+        let count = 0;
+
+        // Collect checked tools for chip rendering
+        const checkedTools = [];
+        cbs.forEach(cb => {
+            totalAll++;
+            const row = cb.closest('tr');
+            if (cb.checked) {
+                count++;
+                totalEnabled++;
+                row.classList.remove('table-light', 'text-muted');
+                checkedTools.push({name: cb.value, type: row.dataset.type, alias: alias});
+            } else {
+                if (!isAllMode) row.classList.add('table-light', 'text-muted');
+            }
+        });
+
+        if (badge) badge.textContent = count + '/' + cbs.length;
+
+        // Render chips: compact summary for "All" mode, individual chips for "Custom"
+        if (count === 0) return;
+        if (isAllMode) {
+            const chip = document.createElement('span');
+            chip.className = 'badge rounded-pill me-1 mb-1 bg-info-subtle text-info-emphasis';
+            chip.style.fontSize = '.75rem';
+            chip.textContent = sysName + ': all ' + count + ' tools';
+            chipsEl.appendChild(chip);
+        } else {
+            checkedTools.forEach(t => {
+                const chip = document.createElement('span');
+                chip.className = 'badge rounded-pill me-1 mb-1 selected-chip ' +
+                    (t.type === 'system_write' ? 'bg-warning text-dark' : 'bg-success-subtle text-success-emphasis');
+                chip.style.cssText = 'font-size:.75rem;cursor:pointer;';
+                chip.title = 'Click to deselect';
+                chip.innerHTML = t.name + ' <i class="bi bi-x"></i>';
+                chip.onclick = function() { uncheckTool(t.name, t.alias); };
+                chipsEl.appendChild(chip);
+            });
+        }
+    });
+
+    // Update header summary
+    const summaryEl = document.getElementById('toolSummaryText');
+    if (summaryEl) {
+        const sysCount = document.querySelectorAll('.system-group').length;
+        summaryEl.innerHTML = totalEnabled + ' of ' + totalAll + ' tool' +
+            (totalAll !== 1 ? 's' : '') + ' enabled from ' +
+            sysCount + ' system' + (sysCount !== 1 ? 's' : '') +
+            ' in <strong>{{ project.name }}</strong>';
+    }
+
+    // Show/hide panel
+    document.getElementById('selectedPanel').style.display = totalEnabled > 0 ? '' : 'none';
+}
+
+// Initial render
+document.addEventListener('DOMContentLoaded', refreshAll);
+</script>
 {% endblock %}

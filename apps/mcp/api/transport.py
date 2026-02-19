@@ -133,7 +133,14 @@ def _get_or_create_session(request, api_key: MCPApiKey, api_key_string: str) -> 
 
     # Create MCP server for this session
     # Pass the API key string so permission checker can look up categories
-    server = MCPServer(account_id=api_key.account.id, api_key=api_key_string, mode=mode, transport="http")
+    # Pass project_id so system tools can auto-resolve external identifiers
+    server = MCPServer(
+        account_id=api_key.account.id,
+        api_key=api_key_string,
+        mode=mode,
+        transport="http",
+        project_id=api_key.project_id,
+    )
 
     # Initialize server
     async_to_sync(server.initialize)()

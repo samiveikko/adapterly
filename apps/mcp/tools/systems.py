@@ -19,13 +19,56 @@ from apps.mcp.tools.base import MCPTool
 
 logger = logging.getLogger(__name__)
 
+# Path parameter names that represent a project/workspace identifier.
+# When a project has an external_id for a system, these params are auto-resolved.
+_PROJECT_PARAM_NAMES = frozenset(
+    {
+        "project_id",
+        "projectId",
+        "project_key",
+        "projectKey",
+        "projectIdOrKey",
+        "project",
+        "workspace_id",
+        "workspaceId",
+        "repo",
+        "repository",
+        "repo_slug",
+    }
+)
 
-def get_system_tools(account_id: int) -> list[MCPTool]:
+
+def _build_project_context(project_id: int) -> tuple[dict[str, str], dict[str, list[str] | None]]:
+    """Build project context from ProjectIntegrations.
+
+    Returns:
+        Tuple of:
+        - external_ids: {system_alias: external_id} for path-param auto-injection
+        - allowed_actions: {system_alias: list_of_tool_names | None} for per-tool filtering
+          None means all tools allowed for that system.
+    """
+    from apps.mcp.models import ProjectIntegration
+
+    external_ids = {}
+    allowed_actions = {}
+    for pi in ProjectIntegration.objects.filter(project_id=project_id, is_enabled=True).select_related("system"):
+        if pi.external_id:
+            external_ids[pi.system.alias] = pi.external_id
+        allowed_actions[pi.system.alias] = pi.allowed_actions
+    return external_ids, allowed_actions
+
+
+def get_system_tools(account_id: int, project_id: int | None = None) -> list[MCPTool]:
     """
     Generate MCP tools from Action definitions.
 
+    When project_id is provided, only tools for systems linked via
+    ProjectIntegration are included. Per-tool filtering is applied
+    if the integration has allowed_actions set.
+
     Args:
         account_id: Account ID to generate tools for
+        project_id: Optional project ID — scopes tools to project integrations
 
     Returns:
         List of MCPTool objects
@@ -33,12 +76,23 @@ def get_system_tools(account_id: int) -> list[MCPTool]:
     from apps.systems.models import AccountSystem, Action
 
     tools = []
+    project_context: dict[str, str] = {}
+    project_allowed: dict[str, list[str] | None] = {}
+
+    if project_id:
+        project_context, project_allowed = _build_project_context(project_id)
 
     try:
-        # Get all enabled systems for this account
-        enabled_systems = list(
-            AccountSystem.objects.filter(account_id=account_id, is_enabled=True).values_list("system__alias", flat=True)
-        )
+        if project_id and project_allowed:
+            # Project-scoped: only systems linked via ProjectIntegration
+            enabled_systems = list(project_allowed.keys())
+        else:
+            # No project binding: all account-level systems
+            enabled_systems = list(
+                AccountSystem.objects.filter(account_id=account_id, is_enabled=True).values_list(
+                    "system__alias", flat=True
+                )
+            )
 
         if not enabled_systems:
             logger.info(f"No enabled systems for account {account_id}")
@@ -54,18 +108,24 @@ def get_system_tools(account_id: int) -> list[MCPTool]:
         )
 
         for action in actions:
-            tool = _action_to_tool(action, account_id)
+            tool = _action_to_tool(action, account_id, project_context)
             if tool:
+                # Per-tool filtering: if allowed_actions is set, only include listed tools
+                system_alias = tool.system_alias
+                if system_alias and system_alias in project_allowed:
+                    allowed = project_allowed[system_alias]
+                    if allowed is not None and tool.name not in allowed:
+                        continue
                 tools.append(tool)
 
-        logger.info(f"Generated {len(tools)} system tools for account {account_id}")
+        logger.info(f"Generated {len(tools)} system tools for account {account_id} (project={project_id})")
     except Exception as e:
         logger.warning(f"Error generating system tools: {e}")
 
     return tools
 
 
-def _action_to_tool(action, account_id: int) -> MCPTool | None:
+def _action_to_tool(action, account_id: int, project_context: dict[str, str] | None = None) -> MCPTool | None:
     """
     Convert an Action to an MCPTool.
     """
@@ -87,8 +147,23 @@ def _action_to_tool(action, account_id: int) -> MCPTool | None:
         # Build description
         description = action.description or f"{action.name} on {system.display_name} {resource.name}"
 
+        # Determine auto-inject params from project context
+        auto_inject = {}
+        external_id = (project_context or {}).get(system.alias)
+        if external_id:
+            path = action.path or ""
+            path_params = re.findall(r"\{(\w+)\}", path)
+            for param in path_params:
+                if param in _PROJECT_PARAM_NAMES:
+                    auto_inject[param] = external_id
+                    break  # Only inject the first matching project param
+
         # Build input schema from action parameters
-        input_schema = _build_action_input_schema(action)
+        input_schema = _build_action_input_schema(action, auto_inject)
+
+        if auto_inject:
+            injected_names = ", ".join(auto_inject.keys())
+            description = f"{description} ({injected_names} auto-resolved from project context)"
 
         # Create handler function
         handler = _create_action_handler(
@@ -98,6 +173,7 @@ def _action_to_tool(action, account_id: int) -> MCPTool | None:
             resource_alias=resource.alias,
             action_alias=action.alias,
             method=method,
+            auto_inject=auto_inject or None,
         )
 
         return MCPTool(
@@ -130,8 +206,15 @@ def _sanitize_tool_name(name: str) -> str:
     return name
 
 
-def _build_action_input_schema(action) -> dict[str, Any]:
-    """Build JSON Schema from action parameters."""
+def _build_action_input_schema(action, auto_inject: dict[str, str] | None = None) -> dict[str, Any]:
+    """Build JSON Schema from action parameters.
+
+    Args:
+        action: Action model instance
+        auto_inject: Dict of param_name → value that will be auto-injected
+                     at execution time. These are removed from the schema
+                     so the agent doesn't need to provide them.
+    """
     if action.parameters_schema:
         # Use the existing schema
         schema = action.parameters_schema.copy()
@@ -139,6 +222,13 @@ def _build_action_input_schema(action) -> dict[str, Any]:
         # Ensure it has the right structure
         if "type" not in schema:
             schema["type"] = "object"
+
+        # Remove auto-injected params from explicit schema
+        if auto_inject and "properties" in schema:
+            for param in auto_inject:
+                schema["properties"].pop(param, None)
+                if "required" in schema and param in schema["required"]:
+                    schema["required"] = [r for r in schema["required"] if r != param]
 
         return schema
 
@@ -150,6 +240,8 @@ def _build_action_input_schema(action) -> dict[str, Any]:
     required = []
 
     for param in path_params:
+        if auto_inject and param in auto_inject:
+            continue  # Skip — will be auto-injected
         properties[param] = {"type": "string", "description": f"Path parameter: {param}"}
         required.append(param)
 
@@ -165,10 +257,20 @@ def _build_action_input_schema(action) -> dict[str, Any]:
 
 
 def _create_action_handler(
-    action_id: int, system_alias: str, interface_alias: str, resource_alias: str, action_alias: str, method: str
+    action_id: int,
+    system_alias: str,
+    interface_alias: str,
+    resource_alias: str,
+    action_alias: str,
+    method: str,
+    auto_inject: dict[str, str] | None = None,
 ):
     """
     Create a handler function for an action.
+
+    Args:
+        auto_inject: Dict of param_name → value to inject automatically
+                     before path substitution (e.g. project_id from project context).
 
     Returns an async function that executes the action.
     """
@@ -179,6 +281,12 @@ def _create_action_handler(
 
         account_id = ctx["account_id"]
         session_manager = ctx.get("session_manager")
+
+        # Inject auto-resolved params (e.g. project_id from project context)
+        if auto_inject:
+            for key, value in auto_inject.items():
+                if key not in params:
+                    params[key] = value
 
         try:
             # Get the action (wrapped for async)

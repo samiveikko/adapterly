@@ -37,15 +37,15 @@
                                value="{% if project %}{{ project.name }}{% endif %}"
                                placeholder="e.g., Sales CRM, Customer Portal" required>
                         {% if not project %}
-                        <small class="text-muted">A URL slug will be auto-generated from the name.</small>
+                        <small class="text-muted">A Project ID (URL slug) will be auto-generated from the name.</small>
                         {% endif %}
                     </div>
 
                     {% if project %}
                     <div class="mb-3">
-                        <label class="form-label">Slug</label>
+                        <label class="form-label">Project ID</label>
                         <input type="text" class="form-control" value="{{ project.slug }}" disabled>
-                        <small class="text-muted">The slug cannot be changed after creation.</small>
+                        <small class="text-muted">The Project ID cannot be changed after creation.</small>
                     </div>
                     {% endif %}
 

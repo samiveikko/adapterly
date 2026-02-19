@@ -50,6 +50,7 @@ class MCPServer:
         user_id: int | None = None,
         transport: str = "stdio",
         project_identifier: str | None = None,
+        project_id: int | None = None,
     ):
         """
         Initialize MCP server.
@@ -61,6 +62,7 @@ class MCPServer:
             user_id: Optional user ID
             transport: Transport type ("stdio" or "sse")
             project_identifier: Optional project identifier for category filtering
+            project_id: Optional project DB ID for auto-resolving external identifiers
         """
         self.account_id = account_id
         self.api_key = api_key
@@ -68,6 +70,7 @@ class MCPServer:
         self.user_id = user_id
         self.transport_type = transport
         self.project_identifier = project_identifier
+        self.project_id = project_id
 
         # Generate session ID
         self.session_id = create_session_id()
@@ -101,7 +104,9 @@ class MCPServer:
 
         # Register system tools (sync ORM call wrapped for async)
         try:
-            system_tools = await sync_to_async(get_system_tools, thread_sensitive=False)(self.account_id)
+            system_tools = await sync_to_async(get_system_tools, thread_sensitive=False)(
+                self.account_id, project_id=self.project_id
+            )
             for tool in system_tools:
                 self.registry.register(tool)
         except Exception as e:

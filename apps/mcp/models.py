@@ -38,6 +38,11 @@ class ProjectIntegration(models.Model):
         max_length=500, blank=True, help_text='External project identifier in the target system (e.g., Jira "PROJ-123")'
     )
     is_enabled = models.BooleanField(default=True)
+    allowed_actions = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="List of allowed tool names (e.g. ['aiforsite_images_list']). Null = all tools allowed.",
+    )
     custom_config = models.JSONField(
         default=dict, blank=True, help_text="Additional integration-specific configuration"
     )
@@ -338,6 +343,13 @@ class Project(models.Model):
     )
 
     is_active = models.BooleanField(default=True)
+    entity_mapping = models.ForeignKey(
+        "systems.EntityMapping",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="projects",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -9,7 +9,7 @@
     <div>
         <h2 class="mb-1">{{ project.name }}</h2>
         <p class="text-muted mb-0">
-            <code>{{ project.slug }}</code>
+            <span class="me-2">Project ID: <code>{{ project.slug }}</code></span>
             {% if not project.is_active %}
             <span class="badge bg-secondary ms-2">Inactive</span>
             {% endif %}
@@ -26,6 +26,35 @@
 <div class="card shadow-sm border-0 mb-4">
     <div class="card-body">
         <p class="mb-0">{{ project.description }}</p>
+    </div>
+</div>
+{% endif %}
+
+{% if mapping_identifiers %}
+<!-- Entity Mapping Identifiers -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-white border-bottom">
+        <h6 class="mb-0"><i class="bi bi-diagram-3 text-secondary"></i> Cross-System Identifiers</h6>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>System</th>
+                        <th>External ID</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ident in mapping_identifiers %}
+                    <tr>
+                        <td>{{ ident.system.display_name }}</td>
+                        <td><code>{{ ident.identifier_value }}</code></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 {% endif %}
