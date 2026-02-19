@@ -186,8 +186,11 @@ class MCPServer:
 
     async def _handle_list_tools(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle tools/list request."""
+        from asgiref.sync import sync_to_async
+
         filter_opts = self.permissions.get_tool_list_filter()
-        tools = self.registry.list_tools_mcp_format(**filter_opts)
+        # list_tools may trigger ORM calls (category resolver), wrap for async
+        tools = await sync_to_async(self.registry.list_tools_mcp_format, thread_sensitive=False)(**filter_opts)
 
         return {"tools": tools}
 
