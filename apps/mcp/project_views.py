@@ -1,0 +1,974 @@
+"""
+User-facing views for Project management.
+
+Slug-based URL structure: /projects/<slug>/...
+"""
+
+import re
+from datetime import timedelta
+
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
+from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Value
+from django.db.models.functions import Coalesce
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django.utils.text import slugify
+from django.views.decorators.http import require_POST
+
+from apps.accounts.utils import get_active_account, get_active_account_user
+from apps.mcp.models import (
+    AgentProfile,
+    ErrorDiagnostic,
+    MCPApiKey,
+    MCPAuditLog,
+    Project,
+    ProjectIntegration,
+    ToolCategory,
+)
+
+
+def _get_project_for_account(request, slug):
+    """Get a project by slug, scoped to the active account."""
+    active_account = get_active_account(request)
+    if not active_account:
+        return None, None
+    project = get_object_or_404(Project, slug=slug, account=active_account)
+    return active_account, project
+
+
+# ============================================================================
+# Project CRUD
+# ============================================================================
+
+
+@login_required
+def project_list(request):
+    """List all projects for the active account."""
+    active_account = get_active_account(request)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "No active account")
+        return redirect("index")
+
+    # Per-project: count of pending errors linked via integration system aliases
+    recent_error_subquery = (
+        ErrorDiagnostic.objects.filter(
+            account=active_account,
+            status="pending",
+            last_seen_at__gte=timezone.now() - timedelta(days=7),
+            system_alias__in=Subquery(
+                ProjectIntegration.objects.filter(
+                    project=OuterRef(OuterRef("pk")),
+                    is_enabled=True,
+                ).values("system__alias")
+            ),
+        )
+        .values("account")
+        .annotate(cnt=Count("id"))
+        .values("cnt")
+    )
+
+    projects = (
+        Project.objects.filter(account=active_account)
+        .annotate(
+            integration_count=Count("integrations", distinct=True),
+            profile_count=Count("agent_profiles", distinct=True),
+            token_count=Count("agent_profiles__api_keys", distinct=True),
+            active_integration_count=Count("integrations", filter=Q(integrations__is_enabled=True), distinct=True),
+            recent_errors=Coalesce(Subquery(recent_error_subquery[:1], output_field=IntegerField()), Value(0)),
+        )
+        .order_by("name")
+    )
+
+    # Account-level aggregates
+    total_integrations = ProjectIntegration.objects.filter(project__account=active_account).count()
+    total_profiles = AgentProfile.objects.filter(project__account=active_account).count()
+    total_tokens = MCPApiKey.objects.filter(account=active_account).count()
+    recent_runs = MCPAuditLog.objects.filter(
+        account=active_account,
+        timestamp__gte=timezone.now() - timedelta(days=30),
+    ).count()
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "projects": projects,
+        "total_integrations": total_integrations,
+        "total_profiles": total_profiles,
+        "total_tokens": total_tokens,
+        "recent_runs": recent_runs,
+    }
+
+    return render(request, "mcp/project_list.html", context)
+
+
+@login_required
+def project_create(request):
+    """Create a new project."""
+    active_account = get_active_account(request)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "No active account")
+        return redirect("index")
+
+    if not active_account_user:
+        messages.error(request, "Admin access required")
+        return redirect("projects:list")
+
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        description = request.POST.get("description", "").strip()
+
+        if not name:
+            messages.error(request, "Project name is required")
+        else:
+            slug = slugify(name)[:100]
+            if not slug:
+                slug = "project"
+
+            # Ensure unique slug within account
+            base_slug = slug
+            counter = 1
+            while Project.objects.filter(account=active_account, slug=slug).exists():
+                slug = f"{base_slug}-{counter}"[:100]
+                counter += 1
+
+            project = Project.objects.create(
+                account=active_account,
+                name=name,
+                slug=slug,
+                description=description,
+            )
+            messages.success(request, f"Project '{name}' created")
+            return redirect("projects:detail", slug=project.slug)
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+    }
+
+    return render(request, "mcp/project_form.html", context)
+
+
+@login_required
+def project_detail(request, slug):
+    """Project workspace dashboard."""
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "No active account")
+        return redirect("index")
+
+    integrations = ProjectIntegration.objects.filter(project=project).select_related("system")
+    profiles = AgentProfile.objects.filter(project=project).prefetch_related("api_keys")
+    log_count = MCPAuditLog.objects.filter(account=active_account).count()
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "project": project,
+        "integrations": integrations,
+        "profiles": profiles,
+        "integration_count": integrations.count(),
+        "profile_count": profiles.count(),
+        "log_count": log_count,
+        "active_tab": "overview",
+    }
+
+    return render(request, "mcp/project_detail.html", context)
+
+
+@login_required
+def project_edit(request, slug):
+    """Edit a project."""
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "No active account")
+        return redirect("index")
+
+    if not active_account_user:
+        messages.error(request, "Admin access required")
+        return redirect("projects:detail", slug=slug)
+
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        description = request.POST.get("description", "").strip()
+        is_active = request.POST.get("is_active") == "on"
+
+        if not name:
+            messages.error(request, "Project name is required")
+        else:
+            project.name = name
+            project.description = description
+            project.is_active = is_active
+            project.save()
+            messages.success(request, f"Project '{name}' updated")
+            return redirect("projects:detail", slug=project.slug)
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "project": project,
+    }
+
+    return render(request, "mcp/project_form.html", context)
+
+
+@login_required
+@require_POST
+def project_delete(request, slug):
+    """Delete a project."""
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "No active account")
+        return redirect("index")
+
+    if not active_account_user:
+        messages.error(request, "Admin access required")
+        return redirect("projects:detail", slug=slug)
+
+    project_name = project.name
+    project.delete()
+    messages.success(request, f"Project '{project_name}' deleted")
+    return redirect("projects:list")
+
+
+# ============================================================================
+# Project-scoped Integrations (slug-based wrappers)
+# ============================================================================
+
+
+@login_required
+def project_integrations_view(request, slug):
+    """List integrations for a project (slug-based)."""
+    from apps.systems.models import AccountSystem
+
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "No active account")
+        return redirect("index")
+
+    integrations = ProjectIntegration.objects.filter(project=project).select_related("system")
+
+    # Check which project-credential integrations have credentials configured
+    project_cred_system_ids = set(
+        AccountSystem.objects.filter(account=active_account, project=project).values_list("system_id", flat=True)
+    )
+    for integration in integrations:
+        integration.has_project_credentials = (
+            integration.credential_source != "project" or integration.system_id in project_cred_system_ids
+        )
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "project": project,
+        "integrations": integrations,
+        "active_tab": "integrations",
+    }
+
+    return render(request, "mcp/project_integrations.html", context)
+
+
+@login_required
+def project_integration_add_view(request, slug):
+    """Add a system integration to a project (slug-based)."""
+    from apps.systems.models import AccountSystem, System
+
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "Admin access required")
+        return redirect("projects:list")
+
+    available_systems = System.objects.filter(
+        account_configs__account=active_account,
+        account_configs__is_enabled=True,
+        is_active=True,
+    ).distinct()
+
+    if request.method == "POST":
+        system_id = request.POST.get("system_id")
+        credential_source = request.POST.get("credential_source", "account")
+        notes = request.POST.get("notes", "").strip()
+
+        if not system_id:
+            messages.error(request, "System is required")
+        else:
+            try:
+                system = System.objects.get(id=system_id, is_active=True)
+            except System.DoesNotExist:
+                messages.error(request, "System not found")
+                return redirect("projects:integrations", slug=slug)
+
+            accsys_qs = AccountSystem.objects.filter(
+                account=active_account,
+                system=system,
+                is_enabled=True,
+            )
+            if credential_source == "project":
+                accsys_qs = accsys_qs.filter(project=project)
+            else:
+                accsys_qs = accsys_qs.filter(project__isnull=True)
+
+            if not accsys_qs.exists():
+                messages.warning(
+                    request,
+                    f"No {credential_source}-level credentials found for {system.display_name}. "
+                    f"Integration created but may not work until credentials are configured.",
+                )
+
+            integration = ProjectIntegration.objects.create(
+                project=project,
+                system=system,
+                credential_source=credential_source,
+                notes=notes,
+                is_enabled=True,
+            )
+            messages.success(request, f"Integration with {system.display_name} added")
+
+            # Redirect to credentials page if project-specific credentials selected
+            if credential_source == "project":
+                return redirect("projects:integration_credentials", slug=slug, integration_id=integration.id)
+            return redirect("projects:integrations", slug=slug)
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "project": project,
+        "available_systems": available_systems,
+        "active_tab": "integrations",
+    }
+
+    return render(request, "mcp/project_integration_form.html", context)
+
+
+@login_required
+def project_integration_edit_view(request, slug, integration_id):
+    """Edit a project integration (slug-based)."""
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "Admin access required")
+        return redirect("projects:list")
+
+    integration = get_object_or_404(ProjectIntegration, id=integration_id, project=project)
+
+    if request.method == "POST":
+        old_source = integration.credential_source
+        credential_source = request.POST.get("credential_source", "account")
+        is_enabled = request.POST.get("is_enabled") == "on"
+        notes = request.POST.get("notes", "").strip()
+
+        integration.credential_source = credential_source
+        integration.is_enabled = is_enabled
+        integration.notes = notes
+        integration.save()
+
+        messages.success(request, f"Integration with {integration.system.display_name} updated")
+
+        # Redirect to credentials page if switched to project-specific
+        if credential_source == "project" and old_source != "project":
+            return redirect("projects:integration_credentials", slug=slug, integration_id=integration.id)
+        return redirect("projects:integrations", slug=slug)
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "project": project,
+        "integration": integration,
+        "active_tab": "integrations",
+    }
+
+    return render(request, "mcp/project_integration_form.html", context)
+
+
+@login_required
+@require_POST
+def project_integration_remove_view(request, slug, integration_id):
+    """Remove a project integration (slug-based)."""
+    active_account, project = _get_project_for_account(request, slug)
+
+    if not active_account:
+        return JsonResponse({"error": "Admin access required"}, status=403)
+
+    integration = get_object_or_404(ProjectIntegration, id=integration_id, project=project)
+
+    system_name = integration.system.display_name
+    integration.delete()
+
+    return JsonResponse({"success": True, "message": f"Integration with {system_name} removed"})
+
+
+@login_required
+def project_integration_credentials_view(request, slug, integration_id):
+    """Configure project-scoped credentials for an integration."""
+    from apps.systems.models import AccountSystem
+    from apps.systems.views import _get_auth_fields_for_system
+
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "No active account")
+        return redirect("projects:list")
+
+    integration = get_object_or_404(ProjectIntegration, id=integration_id, project=project)
+    system = integration.system
+
+    # Get or create project-scoped AccountSystem
+    account_system, created = AccountSystem.objects.get_or_create(
+        account=active_account,
+        system=system,
+        project=project,
+        defaults={"is_enabled": True},
+    )
+
+    if request.method == "POST":
+        # Save credential fields
+        credential_fields = ["username", "password", "api_key", "token", "client_id", "client_secret", "session_cookie"]
+        for field in credential_fields:
+            value = request.POST.get(field, "").strip()
+            if value:
+                setattr(account_system, field, value)
+
+        account_system.is_enabled = request.POST.get("is_enabled") == "on"
+        account_system.save()
+
+        messages.success(request, f"Credentials for {system.display_name} saved")
+        return redirect("projects:integrations", slug=slug)
+
+    auth_fields = _get_auth_fields_for_system(system)
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "project": project,
+        "integration": integration,
+        "system": system,
+        "account_system": account_system,
+        "auth_fields": auth_fields,
+        "active_tab": "integrations",
+    }
+
+    return render(request, "mcp/project_integration_credentials.html", context)
+
+
+@login_required
+@require_POST
+def project_integration_test_view(request, slug, integration_id):
+    """Test connection for a project integration's credentials."""
+    from apps.systems.models import AccountSystem
+    from apps.systems.services import test_system_connection
+
+    active_account, project = _get_project_for_account(request, slug)
+    if not active_account:
+        return JsonResponse({"error": "No active account"}, status=403)
+
+    integration = get_object_or_404(ProjectIntegration, id=integration_id, project=project)
+
+    # Find the right AccountSystem: project-scoped if project credentials, else account-level
+    accsys_filter = {"account": active_account, "system": integration.system}
+    if integration.credential_source == "project":
+        accsys_filter["project"] = project
+    else:
+        accsys_filter["project__isnull"] = True
+
+    try:
+        account_system = AccountSystem.objects.select_related("system").get(**accsys_filter)
+    except AccountSystem.DoesNotExist:
+        return JsonResponse({"success": False, "message": "No credentials configured yet."})
+
+    success, message = test_system_connection(account_system)
+
+    if success:
+        account_system.mark_verified()
+    else:
+        account_system.mark_error(message)
+
+    return JsonResponse({"success": success, "message": message})
+
+
+# ============================================================================
+# Project-scoped API Keys
+# ============================================================================
+
+
+@login_required
+def project_api_keys_view(request, slug):
+    """API keys for a specific project."""
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "No active account")
+        return redirect("index")
+
+    api_keys = MCPApiKey.objects.filter(project=project).select_related("created_by")
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "project": project,
+        "api_keys": api_keys,
+        "active_tab": "api_keys",
+    }
+
+    return render(request, "mcp/project_api_keys.html", context)
+
+
+# ============================================================================
+# Project-scoped Tools
+# ============================================================================
+
+
+def _sanitize_tool_name(name):
+    """Sanitize tool name to be MCP-compliant."""
+    name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+    name = re.sub(r"_+", "_", name)
+    name = name.strip("_")
+    name = name.lower()
+    return name
+
+
+@login_required
+def project_tools_view(request, slug):
+    """Tools available for a specific project (from its integrations).
+
+    GET: display tools with selection checkboxes.
+    POST: save selected tools per integration (admin only).
+    """
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "No active account")
+        return redirect("index")
+
+    integrations = ProjectIntegration.objects.filter(project=project, is_enabled=True).select_related("system")
+
+    from apps.systems.models import Action
+
+    # Handle POST: save tool selections
+    if request.method == "POST" and active_account_user:
+        for integration in integrations:
+            system_alias = integration.system.alias
+            select_mode = request.POST.get(f"mode_{system_alias}", "all")
+            if select_mode == "all":
+                integration.allowed_actions = None
+            else:
+                selected = request.POST.getlist(f"tools_{system_alias}")
+                integration.allowed_actions = selected if selected else []
+            integration.save(update_fields=["allowed_actions"])
+        messages.success(request, "Tool selection saved")
+        return redirect("projects:tools", slug=slug)
+
+    tool_groups = []
+    for integration in integrations:
+        system = integration.system
+        allowed = integration.allowed_actions  # None = all, list = specific
+        actions = Action.objects.filter(
+            resource__interface__system=system,
+            is_mcp_enabled=True,
+            resource__interface__system__is_active=True,
+        ).select_related("resource__interface__system")
+
+        tools = []
+        for action in actions:
+            resource = action.resource
+            interface = resource.interface
+            tool_name = f"{system.alias}_{resource.alias or resource.name}_{action.alias or action.name}"
+            tool_name = _sanitize_tool_name(tool_name)
+
+            method = action.method.upper()
+            interface_type = interface.type.upper()
+            if interface_type == "GRAPHQL":
+                action_name_lower = (action.alias or action.name).lower()
+                if any(
+                    prefix in action_name_lower
+                    for prefix in ["create", "update", "delete", "add", "remove", "set", "mutate"]
+                ):
+                    tool_type = "system_write"
+                else:
+                    tool_type = "system_read"
+            elif method in ("GET", "HEAD", "OPTIONS"):
+                tool_type = "system_read"
+            else:
+                tool_type = "system_write"
+
+            description = action.description or f"{action.name} on {system.display_name} {resource.name}"
+            is_enabled = allowed is None or tool_name in allowed
+            tools.append(
+                {
+                    "name": tool_name,
+                    "description": description[:200],
+                    "tool_type": tool_type,
+                    "is_enabled": is_enabled,
+                }
+            )
+
+        if tools:
+            enabled_count = sum(1 for t in tools if t["is_enabled"])
+            tool_groups.append(
+                {
+                    "system": system.display_name,
+                    "system_alias": system.alias,
+                    "tools": tools,
+                    "select_mode": "all" if allowed is None else "custom",
+                    "enabled_count": enabled_count,
+                }
+            )
+
+    total_tools = sum(len(g["tools"]) for g in tool_groups)
+    enabled_tools = sum(g["enabled_count"] for g in tool_groups)
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "project": project,
+        "tool_groups": tool_groups,
+        "total_tools": total_tools,
+        "enabled_tools": enabled_tools,
+        "active_tab": "tools",
+    }
+
+    return render(request, "mcp/project_tools.html", context)
+
+
+# ============================================================================
+# Project-scoped Logs
+# ============================================================================
+
+
+@login_required
+def project_logs_view(request, slug):
+    """Audit logs for a specific project's API keys."""
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "No active account")
+        return redirect("index")
+
+    # Filter logs by account (MCPAuditLog doesn't have a direct project FK)
+    logs = MCPAuditLog.objects.filter(account=active_account).order_by("-timestamp")
+
+    # Apply filters
+    tool_name = request.GET.get("tool_name", "")
+    success = request.GET.get("success", "")
+
+    if tool_name:
+        logs = logs.filter(tool_name__icontains=tool_name)
+    if success == "true":
+        logs = logs.filter(success=True)
+    elif success == "false":
+        logs = logs.filter(success=False)
+
+    # Pagination
+    paginator = Paginator(logs, 50)
+    page_number = request.GET.get("page", 1)
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "project": project,
+        "page_obj": page_obj,
+        "filter_tool_name": tool_name,
+        "filter_success": success,
+        "active_tab": "logs",
+    }
+
+    return render(request, "mcp/project_logs.html", context)
+
+
+# ============================================================================
+# Project-scoped Agent Profiles
+# ============================================================================
+
+
+@login_required
+def project_profiles_view(request, slug):
+    """List agent profiles for a project."""
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "No active account")
+        return redirect("index")
+
+    profiles = (
+        AgentProfile.objects.filter(project=project).prefetch_related("api_keys", "allowed_categories").order_by("name")
+    )
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "project": project,
+        "profiles": profiles,
+        "active_tab": "profiles",
+    }
+
+    return render(request, "mcp/project_profiles.html", context)
+
+
+@login_required
+def project_profile_create_view(request, slug):
+    """Create an agent profile for a project."""
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "Admin access required")
+        return redirect("projects:list")
+
+    categories = ToolCategory.objects.filter(account=active_account)
+
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        description = request.POST.get("description", "").strip()
+        mode = request.POST.get("mode", "safe")
+
+        if not name:
+            messages.error(request, "Profile name is required")
+        elif AgentProfile.objects.filter(project=project, name=name).exists():
+            messages.error(request, f"A profile named '{name}' already exists in this project")
+        else:
+            profile = AgentProfile.objects.create(
+                account=active_account,
+                project=project,
+                name=name,
+                description=description,
+                mode=mode,
+            )
+            # Set categories
+            cat_ids = request.POST.getlist("categories")
+            if cat_ids:
+                profile.allowed_categories.set(ToolCategory.objects.filter(id__in=cat_ids, account=active_account))
+
+            # Include/exclude tools
+            include_tools = request.POST.getlist("include_tools")
+            exclude_tools = request.POST.getlist("exclude_tools")
+            if include_tools:
+                profile.include_tools = include_tools
+            if exclude_tools:
+                profile.exclude_tools = exclude_tools
+            if include_tools or exclude_tools:
+                profile.save(update_fields=["include_tools", "exclude_tools"])
+
+            messages.success(request, f"Profile '{name}' created")
+            return redirect("projects:profile_detail", slug=slug, profile_id=profile.id)
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "project": project,
+        "categories": categories,
+        "selected_categories": [],
+        "active_tab": "profiles",
+    }
+
+    return render(request, "mcp/project_profile_form.html", context)
+
+
+@login_required
+def project_profile_detail_view(request, slug, profile_id):
+    """Profile detail with token list."""
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "No active account")
+        return redirect("index")
+
+    profile = get_object_or_404(AgentProfile, id=profile_id, project=project)
+    tokens = MCPApiKey.objects.filter(profile=profile).select_related("created_by").order_by("-created_at")
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "project": project,
+        "profile": profile,
+        "tokens": tokens,
+        "active_tab": "profiles",
+    }
+
+    return render(request, "mcp/project_profile_detail.html", context)
+
+
+@login_required
+def project_profile_edit_view(request, slug, profile_id):
+    """Edit an agent profile."""
+    active_account, project = _get_project_for_account(request, slug)
+    active_account_user = get_active_account_user(request)
+
+    if not active_account:
+        messages.error(request, "Admin access required")
+        return redirect("projects:list")
+
+    profile = get_object_or_404(AgentProfile, id=profile_id, project=project)
+    categories = ToolCategory.objects.filter(account=active_account)
+    selected_categories = list(profile.allowed_categories.values_list("id", flat=True))
+
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        description = request.POST.get("description", "").strip()
+        mode = request.POST.get("mode", "safe")
+        is_active = request.POST.get("is_active") == "on"
+
+        if not name:
+            messages.error(request, "Profile name is required")
+        elif AgentProfile.objects.filter(project=project, name=name).exclude(id=profile.id).exists():
+            messages.error(request, f"A profile named '{name}' already exists in this project")
+        else:
+            profile.name = name
+            profile.description = description
+            profile.mode = mode
+            profile.is_active = is_active
+
+            # Include/exclude tools
+            include_tools = request.POST.getlist("include_tools")
+            exclude_tools = request.POST.getlist("exclude_tools")
+            profile.include_tools = include_tools
+            profile.exclude_tools = exclude_tools
+
+            profile.save()
+
+            # Set categories
+            cat_ids = request.POST.getlist("categories")
+            profile.allowed_categories.set(ToolCategory.objects.filter(id__in=cat_ids, account=active_account))
+
+            messages.success(request, f"Profile '{name}' updated")
+            return redirect("projects:profile_detail", slug=slug, profile_id=profile.id)
+
+    context = {
+        "active_account": active_account,
+        "active_account_user": active_account_user,
+        "project": project,
+        "profile": profile,
+        "categories": categories,
+        "selected_categories": selected_categories,
+        "active_tab": "profiles",
+    }
+
+    return render(request, "mcp/project_profile_form.html", context)
+
+
+@login_required
+@require_POST
+def project_profile_delete_view(request, slug, profile_id):
+    """Delete an agent profile (and its tokens via CASCADE)."""
+    active_account, project = _get_project_for_account(request, slug)
+
+    if not active_account:
+        return JsonResponse({"error": "Admin access required"}, status=403)
+
+    profile = get_object_or_404(AgentProfile, id=profile_id, project=project)
+    profile_name = profile.name
+    profile.delete()
+
+    return JsonResponse({"success": True, "message": f"Profile '{profile_name}' deleted"})
+
+
+# ============================================================================
+# MCP Tokens (under profiles)
+# ============================================================================
+
+
+@login_required
+@require_POST
+def project_profile_token_create_view(request, slug, profile_id):
+    """Create a new MCP token under a profile."""
+    active_account, project = _get_project_for_account(request, slug)
+
+    if not active_account:
+        return JsonResponse({"error": "Admin access required"}, status=403)
+
+    profile = get_object_or_404(AgentProfile, id=profile_id, project=project)
+
+    import json
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        body = {}
+
+    token_name = body.get("name", "").strip() or f"Token for {profile.name}"
+
+    key, prefix, key_hash = MCPApiKey.generate_key()
+
+    MCPApiKey.objects.create(
+        account=active_account,
+        created_by=request.user,
+        name=token_name,
+        key_prefix=prefix,
+        key_hash=key_hash,
+        profile=profile,
+        project=project,
+        mode=profile.mode,
+        is_active=True,
+    )
+
+    return JsonResponse(
+        {
+            "success": True,
+            "api_key": key,
+            "prefix": prefix,
+            "name": token_name,
+        }
+    )
+
+
+@login_required
+@require_POST
+def project_profile_token_toggle_view(request, slug, profile_id, token_id):
+    """Toggle a token's active status."""
+    active_account, project = _get_project_for_account(request, slug)
+
+    if not active_account:
+        return JsonResponse({"error": "Admin access required"}, status=403)
+
+    profile = get_object_or_404(AgentProfile, id=profile_id, project=project)
+    token = get_object_or_404(MCPApiKey, id=token_id, profile=profile)
+
+    token.is_active = not token.is_active
+    token.save(update_fields=["is_active"])
+
+    return JsonResponse(
+        {
+            "success": True,
+            "is_active": token.is_active,
+        }
+    )
+
+
+@login_required
+@require_POST
+def project_profile_token_delete_view(request, slug, profile_id, token_id):
+    """Delete a token."""
+    active_account, project = _get_project_for_account(request, slug)
+
+    if not active_account:
+        return JsonResponse({"error": "Admin access required"}, status=403)
+
+    profile = get_object_or_404(AgentProfile, id=profile_id, project=project)
+    token = get_object_or_404(MCPApiKey, id=token_id, profile=profile)
+
+    token_name = token.name
+    token.delete()
+
+    return JsonResponse({"success": True, "message": f"Token '{token_name}' deleted"})

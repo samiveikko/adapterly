@@ -1,0 +1,606 @@
+# AIC by Aiforsite — Construction Site Intelligence Platform
+# https://aicalculation.io | https://saas.aicalculation.io/api/doc/v2.json
+
+system:
+  alias: aiforsite
+  name: aiforsite
+  display_name: AIC by Aiforsite
+  description: >
+    Construction site intelligence platform providing 360 imagery,
+    BIM integration, schedule tracking, spatial zones, video streams,
+    weather data, and AI-powered analysis for construction projects.
+  system_type: monitoring
+  icon: camera-video
+  website_url: https://aicalculation.io
+  industry: construction
+  variables:
+    api_url: https://saas.aicalculation.io/api/v2
+  meta:
+    api_version: v2
+    docs_url: https://saas.aicalculation.io/api/doc/v2.json
+
+interfaces:
+  - alias: api
+    name: api
+    type: API
+    base_url: https://saas.aicalculation.io/api/v2
+    auth:
+      type: bearer
+      header: Authorization
+      prefix: Token
+    requires_browser: false
+    rate_limits:
+      requests_per_minute: 100
+
+    resources:
+      # Projects
+      - alias: projects
+        name: projects
+        description: Construction project management
+        actions:
+          - alias: list
+            name: list
+            description: List all projects
+            method: GET
+            path: /projects/
+            parameters_schema:
+              type: object
+              properties:
+                from:
+                  type: integer
+                  description: Pagination offset
+                to:
+                  type: integer
+                  description: Pagination end
+                limit:
+                  type: integer
+                  description: Max results to return
+
+          - alias: get
+            name: get
+            description: Get project details
+            method: GET
+            path: /project/{project_id}/
+            parameters_schema:
+              type: object
+              properties:
+                project_id:
+                  type: string
+                  description: Project ID
+              required:
+                - project_id
+
+      # Schedules
+      - alias: schedules
+        name: schedules
+        description: Project schedules and tasks
+        actions:
+          - alias: list
+            name: list
+            description: List schedules
+            method: GET
+            path: /schedules/
+            parameters_schema:
+              type: object
+              properties:
+                project:
+                  type: string
+                  description: Filter by project ID
+                from:
+                  type: integer
+                  description: Pagination offset
+                to:
+                  type: integer
+                  description: Pagination end
+                limit:
+                  type: integer
+                  description: Max results to return
+
+          - alias: get
+            name: get
+            description: Get schedule and latest version details
+            method: GET
+            path: /schedules/{schedule_id}/
+            parameters_schema:
+              type: object
+              properties:
+                schedule_id:
+                  type: string
+                  description: Schedule ID
+              required:
+                - schedule_id
+
+          - alias: list_tasks
+            name: list_tasks
+            description: List latest version tasks for a schedule
+            method: GET
+            path: /schedules/{schedule_id}/tasks/
+            parameters_schema:
+              type: object
+              properties:
+                schedule_id:
+                  type: string
+                  description: Schedule ID
+              required:
+                - schedule_id
+
+          - alias: get_task
+            name: get_task
+            description: Get a single schedule task
+            method: GET
+            path: /schedules/{schedule_id}/tasks/{task_id}/
+            parameters_schema:
+              type: object
+              properties:
+                schedule_id:
+                  type: string
+                  description: Schedule ID
+                task_id:
+                  type: string
+                  description: Task ID
+              required:
+                - schedule_id
+                - task_id
+
+      # Spatial Zones
+      - alias: spatial_zones
+        name: spatial_zones
+        description: Spatial zones and areas within projects
+        actions:
+          - alias: list
+            name: list
+            description: List spatial zones
+            method: GET
+            path: /spatial_zones/
+            parameters_schema:
+              type: object
+              properties:
+                project:
+                  type: string
+                  description: Filter by project ID
+                layer:
+                  type: string
+                  description: Filter by layer ID
+                from:
+                  type: integer
+                  description: Pagination offset
+                to:
+                  type: integer
+                  description: Pagination end
+                limit:
+                  type: integer
+                  description: Max results to return
+
+          - alias: get
+            name: get
+            description: Get spatial zone details (s<pk> or z<pk> format)
+            method: GET
+            path: /spatial_zones/{zone_id}/
+            parameters_schema:
+              type: object
+              properties:
+                zone_id:
+                  type: string
+                  description: Zone ID (s<pk> or z<pk> format, non-UUID)
+              required:
+                - zone_id
+
+          - alias: list_children
+            name: list_children
+            description: List child zones of a spatial zone
+            method: GET
+            path: /spatial_zones/{zone_id}/children/
+            parameters_schema:
+              type: object
+              properties:
+                zone_id:
+                  type: string
+                  description: Parent zone ID
+              required:
+                - zone_id
+
+      # Video Streams
+      - alias: videostreams
+        name: videostreams
+        description: Video stream management and images
+        actions:
+          - alias: list
+            name: list
+            description: List video streams
+            method: GET
+            path: /videostreams/
+            parameters_schema:
+              type: object
+              properties: {}
+
+          - alias: get
+            name: get
+            description: Get video stream details
+            method: GET
+            path: /videostreams/{videostream_id}/
+            parameters_schema:
+              type: object
+              properties:
+                videostream_id:
+                  type: string
+                  description: Video stream ID
+              required:
+                - videostream_id
+
+          - alias: list_images
+            name: list_images
+            description: List images from a video stream
+            method: GET
+            path: /videostreams/{videostream_id}/images/
+            parameters_schema:
+              type: object
+              properties:
+                videostream_id:
+                  type: string
+                  description: Video stream ID
+              required:
+                - videostream_id
+
+          - alias: get_image
+            name: get_image
+            description: Get a specific image from a video stream
+            method: GET
+            path: /videostreams/{videostream_id}/images/{image_id}/
+            parameters_schema:
+              type: object
+              properties:
+                videostream_id:
+                  type: string
+                  description: Video stream ID
+                image_id:
+                  type: string
+                  description: Image ID
+              required:
+                - videostream_id
+                - image_id
+
+      # Weather
+      - alias: weather
+        name: weather
+        description: Weather data streams
+        actions:
+          - alias: list
+            name: list
+            description: List weather data
+            method: GET
+            path: /weather/
+            parameters_schema:
+              type: object
+              properties: {}
+
+          - alias: get
+            name: get
+            description: Get weather stream details
+            method: GET
+            path: /weather/{stream_id}/
+            parameters_schema:
+              type: object
+              properties:
+                stream_id:
+                  type: string
+                  description: Weather stream ID
+              required:
+                - stream_id
+
+      # 360 Images
+      - alias: images360
+        name: images360
+        description: 360 panoramic images
+        actions:
+          - alias: list
+            name: list
+            description: List 360 panoramic images
+            method: GET
+            path: /360images/
+            parameters_schema:
+              type: object
+              properties:
+                project:
+                  type: string
+                  description: Filter by project ID
+                begin_time:
+                  type: string
+                  format: date-time
+                  description: Start time filter
+                end_time:
+                  type: string
+                  format: date-time
+                  description: End time filter
+                spatial_zone:
+                  type: string
+                  description: Filter by spatial zone
+                from:
+                  type: integer
+                  description: Pagination offset
+                to:
+                  type: integer
+                  description: Pagination end
+                limit:
+                  type: integer
+                  description: Max results to return
+
+      # Analysis
+      - alias: analysis
+        name: analysis
+        description: AI-powered construction site analysis
+        actions:
+          - alias: image_round_report
+            name: image_round_report
+            description: >
+              Filter 360 frames by layer, spatial_zone, and time (max 7 days).
+              Aggregates observations and optionally runs OpenAI Vision on images.
+            method: GET
+            path: /analysis/image_round_report/
+            parameters_schema:
+              type: object
+              properties:
+                project:
+                  type: string
+                  description: Project ID
+                layer:
+                  type: string
+                  description: Layer ID
+                spatial_zone:
+                  type: string
+                  description: Spatial zone ID
+                begin_time:
+                  type: string
+                  format: date-time
+                  description: Start time (max 7 day range)
+                end_time:
+                  type: string
+                  format: date-time
+                  description: End time
+
+          - alias: schedule_vs_images
+            name: schedule_vs_images
+            description: >
+              Compare schedule tasks (with spatial_zone) to 360 image coverage.
+              Returns deviations and risks.
+            method: GET
+            path: /analysis/schedule_vs_images/
+            parameters_schema:
+              type: object
+              properties:
+                project:
+                  type: string
+                  description: Project ID
+                schedule:
+                  type: string
+                  description: Schedule ID
+
+      # BIMs
+      - alias: bims
+        name: bims
+        description: Building Information Models
+        actions:
+          - alias: list
+            name: list
+            description: List BIM models
+            method: GET
+            path: /bims/
+            parameters_schema:
+              type: object
+              properties:
+                project:
+                  type: string
+                  description: Filter by project ID
+                from:
+                  type: integer
+                  description: Pagination offset
+                to:
+                  type: integer
+                  description: Pagination end
+                limit:
+                  type: integer
+                  description: Max results to return
+
+          - alias: get
+            name: get
+            description: Get BIM model details
+            method: GET
+            path: /bims/{bim_id}/
+            parameters_schema:
+              type: object
+              properties:
+                bim_id:
+                  type: string
+                  description: BIM model ID
+              required:
+                - bim_id
+
+          - alias: list_elements
+            name: list_elements
+            description: List elements (layers/floor plans) linked to a BIM model
+            method: GET
+            path: /bims/{bim_id}/elements/
+            parameters_schema:
+              type: object
+              properties:
+                bim_id:
+                  type: string
+                  description: BIM model ID
+              required:
+                - bim_id
+
+          - alias: get_element
+            name: get_element
+            description: Get a specific BIM element
+            method: GET
+            path: /bims/{bim_id}/elements/{element_id}/
+            parameters_schema:
+              type: object
+              properties:
+                bim_id:
+                  type: string
+                  description: BIM model ID
+                element_id:
+                  type: string
+                  description: Element ID
+              required:
+                - bim_id
+                - element_id
+
+          - alias: list_spaces
+            name: list_spaces
+            description: List spaces within a BIM model
+            method: GET
+            path: /bims/{bim_id}/spaces/
+            parameters_schema:
+              type: object
+              properties:
+                bim_id:
+                  type: string
+                  description: BIM model ID
+              required:
+                - bim_id
+
+          - alias: get_space
+            name: get_space
+            description: Get a specific space within a BIM model
+            method: GET
+            path: /bims/{bim_id}/spaces/{space_id}/
+            parameters_schema:
+              type: object
+              properties:
+                bim_id:
+                  type: string
+                  description: BIM model ID
+                space_id:
+                  type: string
+                  description: Space ID
+              required:
+                - bim_id
+                - space_id
+
+          - alias: list_storeys
+            name: list_storeys
+            description: List storeys (floors) within a BIM model
+            method: GET
+            path: /bims/{bim_id}/storeys/
+            parameters_schema:
+              type: object
+              properties:
+                bim_id:
+                  type: string
+                  description: BIM model ID
+              required:
+                - bim_id
+
+          - alias: get_storey
+            name: get_storey
+            description: Get a specific storey within a BIM model
+            method: GET
+            path: /bims/{bim_id}/storeys/{storey_id}/
+            parameters_schema:
+              type: object
+              properties:
+                bim_id:
+                  type: string
+                  description: BIM model ID
+                storey_id:
+                  type: string
+                  description: Storey ID
+              required:
+                - bim_id
+                - storey_id
+
+      # Conditions
+      - alias: conditions
+        name: conditions
+        description: Condition monitoring streams
+        actions:
+          - alias: list
+            name: list
+            description: List condition streams
+            method: GET
+            path: /conditions/
+            parameters_schema:
+              type: object
+              properties: {}
+
+          - alias: get
+            name: get
+            description: Get condition stream details
+            method: GET
+            path: /conditions/{stream_id}/
+            parameters_schema:
+              type: object
+              properties:
+                stream_id:
+                  type: string
+                  description: Condition stream ID
+              required:
+                - stream_id
+
+      # Layers
+      - alias: layers
+        name: layers
+        description: Map layers and floor plans
+        actions:
+          - alias: list
+            name: list
+            description: List all layers
+            method: GET
+            path: /layers/
+            parameters_schema:
+              type: object
+              properties:
+                project:
+                  type: string
+                  description: Filter by project ID
+                from:
+                  type: integer
+                  description: Pagination offset
+                to:
+                  type: integer
+                  description: Pagination end
+                limit:
+                  type: integer
+                  description: Max results to return
+
+          - alias: get
+            name: get
+            description: Get layer image URL and GPS boundary coordinates
+            method: GET
+            path: /layer/{layer_id}/
+            parameters_schema:
+              type: object
+              properties:
+                layer_id:
+                  type: string
+                  description: Layer ID
+              required:
+                - layer_id
+
+auth_steps:
+  - step_order: 1
+    step_type: api_key
+    step_name: API Token
+    description: Enter your AIC API token (DRF TokenAuthentication)
+    input_fields:
+      api_key:
+        type: string
+        label: API Token
+        required: true
+
+term_mappings:
+  - canonical_term: project
+    system_term: Project
+  - canonical_term: site
+    system_term: Project
+  - canonical_term: schedule
+    system_term: Schedule
+  - canonical_term: zone
+    system_term: Spatial Zone
+  - canonical_term: floor_plan
+    system_term: Layer
+  - canonical_term: camera
+    system_term: Videostream
+  - canonical_term: model
+    system_term: BIM

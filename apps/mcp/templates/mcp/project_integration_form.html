@@ -1,0 +1,133 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}{% if integration %}Edit{% else %}Add{% endif %} Integration - {{ project.name }} - {{ active_account.name }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="border-bottom bg-light">
+    <div class="container">
+        <nav aria-label="breadcrumb" class="py-2">
+            <ol class="breadcrumb mb-0 small">
+                <li class="breadcrumb-item"><a href="{% url 'projects:list' %}">Projects</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'projects:detail' project.slug %}">{{ project.name }}</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'projects:integrations' project.slug %}">Integrations</a></li>
+                <li class="breadcrumb-item active">{% if integration %}Edit{% else %}Add{% endif %}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<div class="mb-4">
+    <h2 class="mb-0 fw-bold">
+        {% if integration %}Edit Integration: {{ integration.system.display_name }}{% else %}Add Integration{% endif %}
+    </h2>
+</div>
+
+<div class="row">
+    <div class="col-lg-7">
+        <form method="post">
+            {% csrf_token %}
+
+            <!-- System Selection (only for add) -->
+            {% if not integration %}
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-body">
+                    {% if available_systems %}
+                    <div class="mb-0">
+                        <label for="system_id" class="form-label fw-semibold">System *</label>
+                        <select class="form-select" id="system_id" name="system_id" required>
+                            <option value="">-- Select a system --</option>
+                            {% for system in available_systems %}
+                            <option value="{{ system.id }}">{{ system.display_name }} ({{ system.alias }})</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Systems configured in your account.</small>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning mb-0">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        No systems available. <a href="/systems/">Configure systems</a> for your account first.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Credentials -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-body">
+                    <label class="form-label fw-semibold">Credentials *</label>
+                    <div class="d-flex gap-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="credential_source"
+                                   id="cred_account" value="account"
+                                   {% if not integration or integration.credential_source == 'account' %}checked{% endif %}>
+                            <label class="form-check-label" for="cred_account">
+                                Account (shared)
+                                <small class="d-block text-muted">Shared credentials from account-level system config</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="credential_source"
+                                   id="cred_project" value="project"
+                                   {% if integration and integration.credential_source == 'project' %}checked{% endif %}>
+                            <label class="form-check-label" for="cred_project">
+                                Project-specific
+                                <small class="d-block text-muted">Separate service user scoped to this project</small>
+                            </label>
+                        </div>
+                    </div>
+                    {% if integration and integration.credential_source == 'project' %}
+                    <div class="mt-3">
+                        <a href="{% url 'projects:integration_credentials' project.slug integration.id %}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-key"></i> Configure project credentials
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if integration %}
+            <!-- Options (only for edit) -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-body">
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="is_enabled" name="is_enabled"
+                               {% if integration.is_enabled %}checked{% endif %}>
+                        <label class="form-check-label" for="is_enabled">
+                            Integration is enabled
+                        </label>
+                        <small class="text-muted d-block">Disabled integrations hide their tools from MCP agents.</small>
+                    </div>
+
+                    <div class="mb-0">
+                        <label for="notes" class="form-label">Notes</label>
+                        <textarea class="form-control" id="notes" name="notes" rows="2"
+                                  placeholder="Optional notes">{{ integration.notes }}</textarea>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Actions -->
+            <div class="d-flex justify-content-between">
+                <a href="{% url 'projects:integrations' project.slug %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Cancel
+                </a>
+                {% if not integration and not available_systems %}
+                <button type="submit" class="btn btn-primary" disabled>
+                    <i class="bi bi-plus-circle"></i> Add Integration
+                </button>
+                {% else %}
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save"></i> {% if integration %}Save Changes{% else %}Add Integration{% endif %}
+                </button>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

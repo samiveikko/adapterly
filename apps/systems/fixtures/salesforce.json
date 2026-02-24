@@ -1,0 +1,734 @@
+[
+  {
+    "model": "systems.system",
+    "pk": 100,
+    "fields": {
+      "name": "salesforce",
+      "alias": "salesforce",
+      "display_name": "Salesforce",
+      "description": "Salesforce CRM - Customer Relationship Management platform. Connect to manage accounts, contacts, leads, opportunities and more.",
+      "variables": {
+        "api_version": "v59.0",
+        "instance_url_placeholder": "https://yourinstance.salesforce.com"
+      },
+      "meta": {
+        "vendor": "Salesforce",
+        "documentation": "https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/",
+        "category": "CRM"
+      },
+      "system_type": "other",
+      "icon": "bi-cloud-fill",
+      "website_url": "https://www.salesforce.com",
+      "is_active": true
+    }
+  },
+  {
+    "model": "systems.interface",
+    "pk": 100,
+    "fields": {
+      "system": 100,
+      "alias": "rest",
+      "name": "rest-api",
+      "type": "API",
+      "base_url": "{instance_url}/services/data/{api_version}",
+      "auth": {
+        "type": "oauth2",
+        "token_url": "https://login.salesforce.com/services/oauth2/token",
+        "authorize_url": "https://login.salesforce.com/services/oauth2/authorize",
+        "scopes": ["api", "refresh_token"],
+        "header": "Authorization",
+        "prefix": "Bearer"
+      },
+      "requires_browser": false,
+      "rate_limits": {
+        "requests_per_day": 100000,
+        "concurrent_requests": 25
+      }
+    }
+  },
+  {
+    "model": "systems.resource",
+    "pk": 100,
+    "fields": {
+      "interface": 100,
+      "alias": "account",
+      "name": "Account",
+      "description": "Salesforce Account object - represents a company or organization"
+    }
+  },
+  {
+    "model": "systems.resource",
+    "pk": 101,
+    "fields": {
+      "interface": 100,
+      "alias": "contact",
+      "name": "Contact",
+      "description": "Salesforce Contact object - represents a person associated with an account"
+    }
+  },
+  {
+    "model": "systems.resource",
+    "pk": 102,
+    "fields": {
+      "interface": 100,
+      "alias": "lead",
+      "name": "Lead",
+      "description": "Salesforce Lead object - represents a prospective customer"
+    }
+  },
+  {
+    "model": "systems.resource",
+    "pk": 103,
+    "fields": {
+      "interface": 100,
+      "alias": "opportunity",
+      "name": "Opportunity",
+      "description": "Salesforce Opportunity object - represents a potential sale"
+    }
+  },
+  {
+    "model": "systems.resource",
+    "pk": 104,
+    "fields": {
+      "interface": 100,
+      "alias": "case",
+      "name": "Case",
+      "description": "Salesforce Case object - represents a customer support case"
+    }
+  },
+  {
+    "model": "systems.resource",
+    "pk": 105,
+    "fields": {
+      "interface": 100,
+      "alias": "task",
+      "name": "Task",
+      "description": "Salesforce Task object - represents an activity or to-do item"
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1000,
+    "fields": {
+      "resource": 100,
+      "alias": "list",
+      "name": "list",
+      "description": "List all Accounts with optional filtering using SOQL",
+      "method": "GET",
+      "path": "/query?q={soql_query}",
+      "headers": {},
+      "parameters_schema": {
+        "type": "object",
+        "properties": {
+          "soql_query": {
+            "type": "string",
+            "description": "SOQL query to filter accounts",
+            "default": "SELECT Id, Name, Industry, Website, Phone, BillingCity, BillingCountry FROM Account LIMIT 100"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of records to return",
+            "default": 100
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "totalSize": {"type": "integer"},
+          "done": {"type": "boolean"},
+          "records": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "Id": {"type": "string"},
+                "Name": {"type": "string"},
+                "Industry": {"type": "string"},
+                "Website": {"type": "string"}
+              }
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "name": "List all accounts",
+          "input": {"soql_query": "SELECT Id, Name, Industry FROM Account LIMIT 10"},
+          "description": "Get first 10 accounts with their industry"
+        }
+      ]
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1001,
+    "fields": {
+      "resource": 100,
+      "alias": "get",
+      "name": "get",
+      "description": "Get a single Account by ID",
+      "method": "GET",
+      "path": "/sobjects/Account/{id}",
+      "headers": {},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Salesforce Account ID (18 characters)"
+          },
+          "fields": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Specific fields to retrieve",
+            "default": ["Id", "Name", "Industry", "Website", "Phone", "BillingAddress"]
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "Id": {"type": "string"},
+          "Name": {"type": "string"},
+          "Industry": {"type": "string"},
+          "Website": {"type": "string"},
+          "Phone": {"type": "string"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1002,
+    "fields": {
+      "resource": 100,
+      "alias": "create",
+      "name": "create",
+      "description": "Create a new Account",
+      "method": "POST",
+      "path": "/sobjects/Account",
+      "headers": {"Content-Type": "application/json"},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["Name"],
+        "properties": {
+          "Name": {
+            "type": "string",
+            "description": "Account name (required)"
+          },
+          "Industry": {
+            "type": "string",
+            "description": "Industry category"
+          },
+          "Website": {
+            "type": "string",
+            "description": "Company website URL"
+          },
+          "Phone": {
+            "type": "string",
+            "description": "Phone number"
+          },
+          "BillingCity": {
+            "type": "string",
+            "description": "Billing city"
+          },
+          "BillingCountry": {
+            "type": "string",
+            "description": "Billing country"
+          },
+          "Description": {
+            "type": "string",
+            "description": "Account description"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "success": {"type": "boolean"},
+          "errors": {"type": "array"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1003,
+    "fields": {
+      "resource": 100,
+      "alias": "update",
+      "name": "update",
+      "description": "Update an existing Account",
+      "method": "PATCH",
+      "path": "/sobjects/Account/{id}",
+      "headers": {"Content-Type": "application/json"},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Salesforce Account ID"
+          },
+          "Name": {"type": "string"},
+          "Industry": {"type": "string"},
+          "Website": {"type": "string"},
+          "Phone": {"type": "string"},
+          "Description": {"type": "string"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1004,
+    "fields": {
+      "resource": 100,
+      "alias": "delete",
+      "name": "delete",
+      "description": "Delete an Account by ID",
+      "method": "DELETE",
+      "path": "/sobjects/Account/{id}",
+      "headers": {},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Salesforce Account ID to delete"
+          }
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1010,
+    "fields": {
+      "resource": 101,
+      "alias": "list",
+      "name": "list",
+      "description": "List all Contacts with optional filtering using SOQL",
+      "method": "GET",
+      "path": "/query?q={soql_query}",
+      "headers": {},
+      "parameters_schema": {
+        "type": "object",
+        "properties": {
+          "soql_query": {
+            "type": "string",
+            "default": "SELECT Id, FirstName, LastName, Email, Phone, AccountId, Account.Name FROM Contact LIMIT 100"
+          }
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1011,
+    "fields": {
+      "resource": 101,
+      "alias": "get",
+      "name": "get",
+      "description": "Get a single Contact by ID",
+      "method": "GET",
+      "path": "/sobjects/Contact/{id}",
+      "headers": {},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {"type": "string", "description": "Salesforce Contact ID"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1012,
+    "fields": {
+      "resource": 101,
+      "alias": "create",
+      "name": "create",
+      "description": "Create a new Contact",
+      "method": "POST",
+      "path": "/sobjects/Contact",
+      "headers": {"Content-Type": "application/json"},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["LastName"],
+        "properties": {
+          "FirstName": {"type": "string"},
+          "LastName": {"type": "string", "description": "Last name (required)"},
+          "Email": {"type": "string", "format": "email"},
+          "Phone": {"type": "string"},
+          "Title": {"type": "string"},
+          "AccountId": {"type": "string", "description": "Related Account ID"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1013,
+    "fields": {
+      "resource": 101,
+      "alias": "update",
+      "name": "update",
+      "description": "Update an existing Contact",
+      "method": "PATCH",
+      "path": "/sobjects/Contact/{id}",
+      "headers": {"Content-Type": "application/json"},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {"type": "string"},
+          "FirstName": {"type": "string"},
+          "LastName": {"type": "string"},
+          "Email": {"type": "string"},
+          "Phone": {"type": "string"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1020,
+    "fields": {
+      "resource": 102,
+      "alias": "list",
+      "name": "list",
+      "description": "List all Leads",
+      "method": "GET",
+      "path": "/query?q={soql_query}",
+      "headers": {},
+      "parameters_schema": {
+        "type": "object",
+        "properties": {
+          "soql_query": {
+            "type": "string",
+            "default": "SELECT Id, FirstName, LastName, Company, Email, Phone, Status, LeadSource FROM Lead LIMIT 100"
+          }
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1021,
+    "fields": {
+      "resource": 102,
+      "alias": "get",
+      "name": "get",
+      "description": "Get a single Lead by ID",
+      "method": "GET",
+      "path": "/sobjects/Lead/{id}",
+      "headers": {},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {"type": "string"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1022,
+    "fields": {
+      "resource": 102,
+      "alias": "create",
+      "name": "create",
+      "description": "Create a new Lead",
+      "method": "POST",
+      "path": "/sobjects/Lead",
+      "headers": {"Content-Type": "application/json"},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["LastName", "Company"],
+        "properties": {
+          "FirstName": {"type": "string"},
+          "LastName": {"type": "string", "description": "Last name (required)"},
+          "Company": {"type": "string", "description": "Company name (required)"},
+          "Email": {"type": "string"},
+          "Phone": {"type": "string"},
+          "Title": {"type": "string"},
+          "Status": {"type": "string", "enum": ["Open - Not Contacted", "Working - Contacted", "Closed - Converted", "Closed - Not Converted"]},
+          "LeadSource": {"type": "string"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1023,
+    "fields": {
+      "resource": 102,
+      "alias": "convert",
+      "name": "convert",
+      "description": "Convert a Lead to Account, Contact, and optionally Opportunity",
+      "method": "POST",
+      "path": "/sobjects/Lead/{id}/convert",
+      "headers": {"Content-Type": "application/json"},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {"type": "string", "description": "Lead ID to convert"},
+          "convertedStatus": {"type": "string", "default": "Closed - Converted"},
+          "createOpportunity": {"type": "boolean", "default": true},
+          "opportunityName": {"type": "string"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1030,
+    "fields": {
+      "resource": 103,
+      "alias": "list",
+      "name": "list",
+      "description": "List all Opportunities",
+      "method": "GET",
+      "path": "/query?q={soql_query}",
+      "headers": {},
+      "parameters_schema": {
+        "type": "object",
+        "properties": {
+          "soql_query": {
+            "type": "string",
+            "default": "SELECT Id, Name, Amount, StageName, CloseDate, AccountId, Account.Name FROM Opportunity LIMIT 100"
+          }
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1031,
+    "fields": {
+      "resource": 103,
+      "alias": "get",
+      "name": "get",
+      "description": "Get a single Opportunity by ID",
+      "method": "GET",
+      "path": "/sobjects/Opportunity/{id}",
+      "headers": {},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {"type": "string"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1032,
+    "fields": {
+      "resource": 103,
+      "alias": "create",
+      "name": "create",
+      "description": "Create a new Opportunity",
+      "method": "POST",
+      "path": "/sobjects/Opportunity",
+      "headers": {"Content-Type": "application/json"},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["Name", "StageName", "CloseDate"],
+        "properties": {
+          "Name": {"type": "string", "description": "Opportunity name (required)"},
+          "AccountId": {"type": "string", "description": "Related Account ID"},
+          "Amount": {"type": "number", "description": "Deal amount"},
+          "StageName": {"type": "string", "description": "Sales stage (required)", "enum": ["Prospecting", "Qualification", "Needs Analysis", "Value Proposition", "Id. Decision Makers", "Perception Analysis", "Proposal/Price Quote", "Negotiation/Review", "Closed Won", "Closed Lost"]},
+          "CloseDate": {"type": "string", "format": "date", "description": "Expected close date (required)"},
+          "Probability": {"type": "integer", "minimum": 0, "maximum": 100},
+          "Description": {"type": "string"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1033,
+    "fields": {
+      "resource": 103,
+      "alias": "update",
+      "name": "update",
+      "description": "Update an existing Opportunity",
+      "method": "PATCH",
+      "path": "/sobjects/Opportunity/{id}",
+      "headers": {"Content-Type": "application/json"},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {"type": "string"},
+          "Name": {"type": "string"},
+          "Amount": {"type": "number"},
+          "StageName": {"type": "string"},
+          "CloseDate": {"type": "string", "format": "date"},
+          "Probability": {"type": "integer"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1040,
+    "fields": {
+      "resource": 104,
+      "alias": "list",
+      "name": "list",
+      "description": "List all Cases",
+      "method": "GET",
+      "path": "/query?q={soql_query}",
+      "headers": {},
+      "parameters_schema": {
+        "type": "object",
+        "properties": {
+          "soql_query": {
+            "type": "string",
+            "default": "SELECT Id, CaseNumber, Subject, Status, Priority, ContactId, AccountId FROM Case LIMIT 100"
+          }
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1041,
+    "fields": {
+      "resource": 104,
+      "alias": "create",
+      "name": "create",
+      "description": "Create a new Case",
+      "method": "POST",
+      "path": "/sobjects/Case",
+      "headers": {"Content-Type": "application/json"},
+      "parameters_schema": {
+        "type": "object",
+        "properties": {
+          "Subject": {"type": "string", "description": "Case subject"},
+          "Description": {"type": "string", "description": "Case description"},
+          "Status": {"type": "string", "enum": ["New", "Working", "Escalated", "Closed"]},
+          "Priority": {"type": "string", "enum": ["Low", "Medium", "High"]},
+          "Origin": {"type": "string", "enum": ["Phone", "Email", "Web"]},
+          "ContactId": {"type": "string"},
+          "AccountId": {"type": "string"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1050,
+    "fields": {
+      "resource": 105,
+      "alias": "list",
+      "name": "list",
+      "description": "List all Tasks",
+      "method": "GET",
+      "path": "/query?q={soql_query}",
+      "headers": {},
+      "parameters_schema": {
+        "type": "object",
+        "properties": {
+          "soql_query": {
+            "type": "string",
+            "default": "SELECT Id, Subject, Status, Priority, ActivityDate, WhoId, WhatId FROM Task LIMIT 100"
+          }
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.action",
+    "pk": 1051,
+    "fields": {
+      "resource": 105,
+      "alias": "create",
+      "name": "create",
+      "description": "Create a new Task",
+      "method": "POST",
+      "path": "/sobjects/Task",
+      "headers": {"Content-Type": "application/json"},
+      "parameters_schema": {
+        "type": "object",
+        "required": ["Subject"],
+        "properties": {
+          "Subject": {"type": "string", "description": "Task subject (required)"},
+          "Description": {"type": "string"},
+          "Status": {"type": "string", "enum": ["Not Started", "In Progress", "Completed", "Waiting on someone else", "Deferred"]},
+          "Priority": {"type": "string", "enum": ["Low", "Normal", "High"]},
+          "ActivityDate": {"type": "string", "format": "date", "description": "Due date"},
+          "WhoId": {"type": "string", "description": "Contact or Lead ID"},
+          "WhatId": {"type": "string", "description": "Related record ID (Account, Opportunity, etc.)"}
+        }
+      }
+    }
+  },
+  {
+    "model": "systems.authenticationstep",
+    "pk": 100,
+    "fields": {
+      "system": 100,
+      "step_order": 1,
+      "step_type": "oauth",
+      "step_name": "Salesforce OAuth 2.0",
+      "description": "Authenticate with Salesforce using OAuth 2.0. You'll need a Connected App with Client ID and Secret.",
+      "base_url": "https://login.salesforce.com",
+      "is_required": true,
+      "timeout_seconds": 300,
+      "input_fields": {
+        "instance_url": {
+          "type": "url",
+          "label": "Instance URL",
+          "placeholder": "https://yourinstance.salesforce.com",
+          "required": true,
+          "help": "Your Salesforce instance URL (e.g., https://na1.salesforce.com or https://yourcompany.my.salesforce.com)"
+        },
+        "client_id": {
+          "type": "text",
+          "label": "Consumer Key (Client ID)",
+          "required": true,
+          "help": "From your Connected App settings"
+        },
+        "client_secret": {
+          "type": "password",
+          "label": "Consumer Secret (Client Secret)",
+          "required": true,
+          "help": "From your Connected App settings"
+        },
+        "username": {
+          "type": "text",
+          "label": "Username",
+          "required": true,
+          "help": "Salesforce username (email)"
+        },
+        "password": {
+          "type": "password",
+          "label": "Password + Security Token",
+          "required": true,
+          "help": "Your password followed by your security token (no space)"
+        }
+      },
+      "validation_rules": {
+        "instance_url": {"required": true, "type": "url"},
+        "client_id": {"required": true, "min_length": 10},
+        "client_secret": {"required": true, "min_length": 10}
+      },
+      "success_message": "Successfully connected to Salesforce!",
+      "failure_message": "Failed to connect to Salesforce. Please check your credentials.",
+      "is_active": true
+    }
+  }
+]

@@ -1,0 +1,135 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}Integrations - {{ project.name }} - {{ active_account.name }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="border-bottom bg-light">
+    <div class="container">
+        <nav aria-label="breadcrumb" class="py-2">
+            <ol class="breadcrumb mb-0 small">
+                <li class="breadcrumb-item"><a href="{% url 'projects:list' %}">Projects</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'projects:detail' project.slug %}">{{ project.name }}</a></li>
+                <li class="breadcrumb-item active">Integrations</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% include 'mcp/includes/project_subnav.html' %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1 fw-bold">Integrations</h2>
+        <p class="text-muted mb-0 small">System connections for <strong>{{ project.name }}</strong></p>
+    </div>
+    {% if active_account_user %}
+    <a href="{% url 'projects:integration_add' project.slug %}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> Add Integration
+    </a>
+    {% endif %}
+</div>
+
+{% if integrations %}
+<div class="row g-3">
+    {% for integration in integrations %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <h6 class="mb-0 fw-bold">
+                            <i class="bi bi-plug text-info"></i>
+                            {{ integration.system.display_name }}
+                        </h6>
+                        <span class="text-muted" style="font-size: 0.8rem;">{{ integration.system.alias }}</span>
+                    </div>
+                    {% if not integration.is_enabled %}
+                    <span class="badge bg-secondary">Disabled</span>
+                    {% else %}
+                    <span class="badge bg-success">Active</span>
+                    {% endif %}
+                </div>
+
+                <div class="mt-2 d-flex gap-2 flex-wrap" style="font-size: 0.8rem;">
+                    {% if integration.credential_source == 'project' %}
+                    <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">Project credentials</span>
+                    {% if not integration.has_project_credentials %}
+                    <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25">
+                        <i class="bi bi-exclamation-triangle"></i> Not configured
+                    </span>
+                    {% endif %}
+                    {% else %}
+                    <span class="badge bg-light text-muted border">Account credentials</span>
+                    {% endif %}
+                </div>
+
+                {% if integration.notes %}
+                <p class="text-muted small mt-2 mb-0">{{ integration.notes|truncatewords:15 }}</p>
+                {% endif %}
+            </div>
+            <div class="px-3 pb-3 pt-2" style="border-top: 1px solid var(--color-gray-100);">
+                <div class="d-flex justify-content-between">
+                    <div class="d-flex gap-2">
+                        <a href="{% url 'projects:integration_edit' project.slug integration.id %}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-pencil"></i> Edit
+                        </a>
+                        {% if integration.credential_source == 'project' %}
+                        <a href="{% url 'projects:integration_credentials' project.slug integration.id %}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-key"></i> Credentials
+                        </a>
+                        {% endif %}
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger"
+                            onclick="removeIntegration({{ integration.id }}, '{{ integration.system.display_name }}')">
+                        <i class="bi bi-trash"></i> Remove
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card shadow-sm border-0">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-plug text-muted" style="font-size: 4rem;"></i>
+        <h4 class="mt-3 fw-bold">No Integrations</h4>
+        <p class="text-muted">Add system integrations to enable MCP tools for this project.</p>
+        {% if active_account_user %}
+        <a href="{% url 'projects:integration_add' project.slug %}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> Add Integration
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<script>
+async function removeIntegration(integrationId, systemName) {
+    if (!confirm(`Remove integration with "${systemName}"?`)) return;
+
+    try {
+        const response = await fetch(`/projects/{{ project.slug }}/integrations/${integrationId}/remove/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error removing integration');
+    }
+}
+</script>
+{% endblock %}
