@@ -67,11 +67,9 @@
                 </div>
 
                 <div class="mb-3">
-                    <small class="text-muted d-block mb-1">Categories:</small>
-                    {% if profile.allowed_categories.count > 0 %}
-                        {% for cat in profile.allowed_categories.all %}
-                        <span class="badge bg-info me-1">{{ cat.name }}</span>
-                        {% endfor %}
+                    <small class="text-muted d-block mb-1">Tools:</small>
+                    {% if profile.include_tools %}
+                    <span class="text-muted">{{ profile.include_tools|length }} tools</span>
                     {% else %}
                     <span class="text-muted">All allowed</span>
                     {% endif %}

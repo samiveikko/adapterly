@@ -2,7 +2,6 @@
 API Views for MCP management.
 """
 
-import fnmatch
 from datetime import timedelta
 
 from django.db.models import Avg, Count, Q
@@ -10,36 +9,23 @@ from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from apps.mcp.api.serializers import (
-    AgentPolicySerializer,
     AgentProfileSerializer,
-    EffectiveCategoriesSerializer,
     MCPApiKeyCreateSerializer,
     MCPApiKeySerializer,
     MCPAuditLogSerializer,
     MCPSessionSerializer,
     ProjectIntegrationSerializer,
-    ProjectPolicySerializer,
     ProjectSerializer,
-    ToolCategoryMappingSerializer,
-    ToolCategorySerializer,
-    UserPolicySerializer,
 )
-from apps.mcp.categories import ToolCategoryResolver
 from apps.mcp.models import (
-    AgentPolicy,
     AgentProfile,
     MCPApiKey,
     MCPAuditLog,
     MCPSession,
     Project,
     ProjectIntegration,
-    ProjectPolicy,
-    ToolCategory,
-    ToolCategoryMapping,
-    UserPolicy,
 )
 
 
@@ -101,7 +87,7 @@ class AgentProfileViewSet(AccountScopedMixin, viewsets.ModelViewSet):
     destroy: Delete a profile
     """
 
-    queryset = AgentProfile.objects.prefetch_related("allowed_categories").select_related("project").all()
+    queryset = AgentProfile.objects.select_related("project").all()
     serializer_class = AgentProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ["mode", "is_active", "project"]
@@ -275,347 +261,6 @@ class MCPAuditLogViewSet(AccountScopedMixin, viewsets.ReadOnlyModelViewSet):
         return Response(serializer.data)
 
 
-class ToolCategoryViewSet(AccountScopedMixin, viewsets.ModelViewSet):
-    """
-    API endpoint for managing tool categories.
-
-    list: List all tool categories for the account
-    create: Create a new tool category
-    retrieve: Get category details
-    update: Update category settings
-    destroy: Delete a category
-    """
-
-    queryset = ToolCategory.objects.all()
-    serializer_class = ToolCategorySerializer
-    permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ["risk_level", "is_global"]
-    search_fields = ["key", "name", "description"]
-    ordering = ["key"]
-
-    def perform_create(self, serializer):
-        serializer.save(account=self.get_account())
-
-
-class ToolCategoryMappingViewSet(AccountScopedMixin, viewsets.ModelViewSet):
-    """
-    API endpoint for managing tool-to-category mappings.
-
-    list: List all mappings for the account
-    create: Create a new mapping
-    retrieve: Get mapping details
-    update: Update mapping
-    destroy: Delete a mapping
-    """
-
-    queryset = ToolCategoryMapping.objects.select_related("category").all()
-    serializer_class = ToolCategoryMappingSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ["category", "is_auto"]
-    search_fields = ["tool_key_pattern"]
-    ordering = ["tool_key_pattern"]
-
-    def perform_create(self, serializer):
-        serializer.save(account=self.get_account())
-
-
-class AgentPolicyViewSet(AccountScopedMixin, viewsets.ModelViewSet):
-    """
-    API endpoint for managing agent (API key) policies.
-
-    list: List all agent policies for the account
-    create: Create a new policy for an API key
-    retrieve: Get policy details
-    update: Update policy
-    destroy: Delete a policy
-    """
-
-    queryset = AgentPolicy.objects.select_related("api_key").all()
-    serializer_class = AgentPolicySerializer
-    permission_classes = [permissions.IsAuthenticated]
-    ordering = ["-created_at"]
-
-    def perform_create(self, serializer):
-        serializer.save(account=self.get_account())
-
-    @action(detail=False, methods=["get"], url_path="by-api-key/(?P<api_key_id>[^/.]+)")
-    def by_api_key(self, request, api_key_id=None):
-        """Get policy for a specific API key."""
-        try:
-            policy = self.get_queryset().get(api_key_id=api_key_id)
-            serializer = self.get_serializer(policy)
-            return Response(serializer.data)
-        except AgentPolicy.DoesNotExist:
-            return Response({"error": "No policy found for this API key"}, status=status.HTTP_404_NOT_FOUND)
-
-
-class ProjectPolicyViewSet(AccountScopedMixin, viewsets.ModelViewSet):
-    """
-    API endpoint for managing project policies.
-
-    list: List all project policies for the account
-    create: Create a new project policy
-    retrieve: Get policy details
-    update: Update policy
-    destroy: Delete a policy
-    """
-
-    queryset = ProjectPolicy.objects.all()
-    serializer_class = ProjectPolicySerializer
-    permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ["is_active"]
-    search_fields = ["project_identifier", "name"]
-    ordering = ["project_identifier"]
-
-    def perform_create(self, serializer):
-        serializer.save(account=self.get_account())
-
-    @action(detail=False, methods=["get"], url_path="by-identifier/(?P<identifier>.+)")
-    def by_identifier(self, request, identifier=None):
-        """Get policy for a specific project identifier."""
-        try:
-            policy = self.get_queryset().get(project_identifier=identifier)
-            serializer = self.get_serializer(policy)
-            return Response(serializer.data)
-        except ProjectPolicy.DoesNotExist:
-            return Response({"error": "No policy found for this project"}, status=status.HTTP_404_NOT_FOUND)
-
-
-class UserPolicyViewSet(AccountScopedMixin, viewsets.ModelViewSet):
-    """
-    API endpoint for managing user policies.
-
-    list: List all user policies for the account
-    create: Create a new user policy
-    retrieve: Get policy details
-    update: Update policy
-    destroy: Delete a policy
-    """
-
-    queryset = UserPolicy.objects.select_related("user").all()
-    serializer_class = UserPolicySerializer
-    permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ["is_active"]
-    ordering = ["-created_at"]
-
-    def perform_create(self, serializer):
-        serializer.save(account=self.get_account())
-
-    @action(detail=False, methods=["get"], url_path="by-user/(?P<user_id>[^/.]+)")
-    def by_user(self, request, user_id=None):
-        """Get policy for a specific user."""
-        try:
-            policy = self.get_queryset().get(user_id=user_id)
-            serializer = self.get_serializer(policy)
-            return Response(serializer.data)
-        except UserPolicy.DoesNotExist:
-            return Response({"error": "No policy found for this user"}, status=status.HTTP_404_NOT_FOUND)
-
-
-class EffectiveCategoriesView(APIView):
-    """
-    API endpoint to check resolved effective categories.
-
-    GET /api/mcp/effective-categories/?api_key_id=&project_identifier=&user_id=
-    """
-
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request):
-        account = getattr(request, "account", None)
-        if not account:
-            return Response({"error": "No account context"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Get parameters
-        api_key_id = request.query_params.get("api_key_id")
-        project_identifier = request.query_params.get("project_identifier")
-        user_id = request.query_params.get("user_id")
-
-        # Convert to int if provided
-        if api_key_id:
-            try:
-                api_key_id = int(api_key_id)
-            except ValueError:
-                return Response({"error": "Invalid api_key_id"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if user_id:
-            try:
-                user_id = int(user_id)
-            except ValueError:
-                return Response({"error": "Invalid user_id"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Resolve categories
-        resolver = ToolCategoryResolver(
-            account_id=account.id, api_key_id=api_key_id, project_identifier=project_identifier, user_id=user_id
-        )
-
-        result = resolver.get_effective_categories()
-
-        # Convert to serializable format
-        data = {
-            "effective_categories": list(result.effective_categories) if result.effective_categories else None,
-            "agent_categories": result.agent_categories,
-            "project_categories": result.project_categories,
-            "user_categories": result.user_categories,
-            "is_restricted": result.is_restricted,
-            "all_allowed": result.all_allowed,
-        }
-
-        serializer = EffectiveCategoriesSerializer(data)
-        return Response(serializer.data)
-
-
-class CategoryDebugView(APIView):
-    """
-    Debug view to see full category resolution with tool visibility.
-
-    GET /api/mcp/category-debug/?api_key_id=&project_identifier=&user_id=
-
-    Returns:
-        - All available categories for the account
-        - All tool mappings
-        - Effective categories after policy resolution
-        - Policy details (agent, project, user)
-        - Sample of allowed/blocked tools
-    """
-
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request):
-        account = getattr(request, "account", None)
-        if not account:
-            return Response({"error": "No account context"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Get parameters
-        api_key_id = request.query_params.get("api_key_id")
-        project_identifier = request.query_params.get("project_identifier")
-        user_id = request.query_params.get("user_id")
-
-        # Convert to int if provided
-        if api_key_id:
-            try:
-                api_key_id = int(api_key_id)
-            except ValueError:
-                return Response({"error": "Invalid api_key_id"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if user_id:
-            try:
-                user_id = int(user_id)
-            except ValueError:
-                return Response({"error": "Invalid user_id"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Get all categories
-        categories = ToolCategory.objects.filter(account=account).values("id", "key", "name", "risk_level", "is_global")
-
-        # Get all mappings
-        mappings = (
-            ToolCategoryMapping.objects.filter(account=account)
-            .select_related("category")
-            .values("id", "tool_key_pattern", "category__key", "is_auto")
-        )
-
-        # Get policies
-        agent_policy = None
-        if api_key_id:
-            try:
-                policy = AgentPolicy.objects.select_related("api_key").get(account=account, api_key_id=api_key_id)
-                agent_policy = {
-                    "id": policy.id,
-                    "api_key_name": policy.api_key.name,
-                    "allowed_categories": policy.allowed_categories,
-                }
-            except AgentPolicy.DoesNotExist:
-                agent_policy = {"error": "No policy found for this API key"}
-
-        project_policy = None
-        if project_identifier:
-            try:
-                policy = ProjectPolicy.objects.get(
-                    account=account, project_identifier=project_identifier, is_active=True
-                )
-                project_policy = {
-                    "id": policy.id,
-                    "name": policy.name,
-                    "project_identifier": policy.project_identifier,
-                    "allowed_categories": policy.allowed_categories,
-                }
-            except ProjectPolicy.DoesNotExist:
-                # Try pattern match
-                policies = ProjectPolicy.objects.filter(account=account, is_active=True)
-                for p in policies:
-                    if fnmatch.fnmatch(project_identifier, p.project_identifier):
-                        project_policy = {
-                            "id": p.id,
-                            "name": p.name,
-                            "project_identifier": p.project_identifier,
-                            "matched_pattern": True,
-                            "allowed_categories": p.allowed_categories,
-                        }
-                        break
-                if not project_policy:
-                    project_policy = {"error": "No policy found for this project"}
-
-        user_policy_data = None
-        if user_id:
-            try:
-                policy = UserPolicy.objects.select_related("user").get(account=account, user_id=user_id, is_active=True)
-                user_policy_data = {
-                    "id": policy.id,
-                    "username": policy.user.username,
-                    "allowed_categories": policy.allowed_categories,
-                }
-            except UserPolicy.DoesNotExist:
-                user_policy_data = {"error": "No policy found for this user"}
-
-        # Resolve effective categories
-        resolver = ToolCategoryResolver(
-            account_id=account.id, api_key_id=api_key_id, project_identifier=project_identifier, user_id=user_id
-        )
-        result = resolver.get_effective_categories()
-
-        # Test some sample tools
-        sample_tools = [
-            "salesforce_contact_list",
-            "salesforce_contact_create",
-            "hubspot_deal_get",
-            "hubspot_deal_delete",
-            "admin_user_create",
-            "unknown_tool",
-        ]
-        tool_access = {}
-        for tool in sample_tools:
-            tool_cats = resolver.get_tool_categories(tool)
-            is_allowed = resolver.is_tool_allowed(tool)
-            tool_access[tool] = {"categories": tool_cats, "allowed": is_allowed}
-
-        return Response(
-            {
-                "account": {
-                    "id": account.id,
-                    "name": account.name,
-                },
-                "parameters": {
-                    "api_key_id": api_key_id,
-                    "project_identifier": project_identifier,
-                    "user_id": user_id,
-                },
-                "categories": list(categories),
-                "mappings": list(mappings),
-                "policies": {
-                    "agent": agent_policy,
-                    "project": project_policy,
-                    "user": user_policy_data,
-                },
-                "resolution": {
-                    "effective_categories": list(result.effective_categories) if result.effective_categories else None,
-                    "is_restricted": result.is_restricted,
-                    "all_allowed": result.all_allowed,
-                },
-                "tool_access_samples": tool_access,
-            }
-        )
-
-
 class ProjectIntegrationViewSet(AccountScopedMixin, viewsets.ModelViewSet):
     """
     API endpoint for managing project integrations.
@@ -636,6 +281,22 @@ class ProjectIntegrationViewSet(AccountScopedMixin, viewsets.ModelViewSet):
         if account:
             return queryset.filter(project__account=account)
         return queryset.none()
+
+    def perform_destroy(self, instance):
+        """Remove integration and clean up project-scoped credentials."""
+        from apps.systems.models import AccountSystem
+
+        account = instance.project.account
+        system_id = instance.system_id
+        project = instance.project
+
+        instance.delete()
+
+        AccountSystem.objects.filter(
+            account=account,
+            system_id=system_id,
+            project=project,
+        ).delete()
 
     @action(detail=False, methods=["get"], url_path="by-project/(?P<project_id>[^/.]+)")
     def by_project(self, request, project_id=None):

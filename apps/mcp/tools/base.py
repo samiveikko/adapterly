@@ -100,7 +100,7 @@ class MCPToolRegistry:
         include_write: bool = True,
         allowed_patterns: list[str] | None = None,
         blocked_patterns: list[str] | None = None,
-        category_resolver: Any | None = None,
+        profile: Any | None = None,
     ) -> list[MCPTool]:
         """
         List available tools with optional filtering.
@@ -109,7 +109,7 @@ class MCPToolRegistry:
             include_write: Whether to include write tools
             allowed_patterns: fnmatch patterns for allowed tools
             blocked_patterns: fnmatch patterns for blocked tools
-            category_resolver: Optional ToolCategoryResolver for category filtering
+            profile: Optional AgentProfile for tool filtering
 
         Returns:
             List of MCPTool objects
@@ -132,8 +132,8 @@ class MCPToolRegistry:
                 if not any(fnmatch.fnmatch(name, p) for p in allowed_patterns):
                     continue
 
-            # Check category restrictions
-            if category_resolver and not category_resolver.is_tool_allowed(name):
+            # Check profile restrictions
+            if profile and not profile.is_tool_allowed(name):
                 continue
 
             tools.append(tool)

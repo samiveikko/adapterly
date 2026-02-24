@@ -88,82 +88,32 @@
                 </div>
             </div>
 
-            <!-- Categories -->
+            <!-- Allowed Tools -->
             <div class="card shadow-sm border-0 mb-4">
                 <div class="card-header bg-white border-bottom">
-                    <h6 class="mb-0"><i class="bi bi-tags text-secondary"></i> Allowed Categories</h6>
+                    <h6 class="mb-0"><i class="bi bi-tools text-secondary"></i> Allowed Tools</h6>
                 </div>
                 <div class="card-body">
                     <p class="text-muted small mb-3">
-                        Select which tool categories this profile can access. Leave empty to allow all categories.
+                        Select which tools this profile can access. Leave all unchecked to allow all tools.
                     </p>
 
-                    {% if categories %}
-                    <div class="row">
-                        {% for cat in categories %}
-                        <div class="col-md-6 mb-2">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox"
-                                       name="categories" value="{{ cat.id }}"
-                                       id="cat_{{ cat.id }}"
-                                       {% if cat.id in selected_categories %}checked{% endif %}>
-                                <label class="form-check-label" for="cat_{{ cat.id }}">
-                                    {{ cat.name }}
-                                    <span class="badge {% if cat.risk_level == 'low' %}bg-success{% elif cat.risk_level == 'medium' %}bg-warning text-dark{% else %}bg-danger{% endif %} ms-1">
-                                        {{ cat.get_risk_level_display }}
-                                    </span>
-                                    <small class="d-block text-muted">{{ cat.key }}</small>
-                                </label>
-                            </div>
-                        </div>
+                    {% if available_tools %}
+                    <select class="form-select" name="include_tools" id="include_tools" multiple size="10">
+                        {% for tool in available_tools %}
+                        <option value="{{ tool.name }}"
+                                {% if profile and tool.name in profile.include_tools %}selected{% endif %}>
+                            {{ tool.name }}
+                        </option>
                         {% endfor %}
-                    </div>
+                    </select>
+                    <small class="text-muted">Hold Ctrl/Cmd to select multiple. Leave empty to allow all tools.</small>
                     {% else %}
                     <div class="alert alert-info mb-0">
                         <i class="bi bi-info-circle"></i>
-                        No categories defined yet. All tools will be allowed.
+                        No tools available yet. All tools will be allowed.
                     </div>
                     {% endif %}
-                </div>
-            </div>
-
-            <!-- Tool Selection -->
-            <div class="card shadow-sm border-0 mb-4">
-                <div class="card-header bg-white border-bottom">
-                    <h6 class="mb-0"><i class="bi bi-tools text-secondary"></i> Tool Selection</h6>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <!-- Include Tools -->
-                        <div class="col-md-6">
-                            <label class="form-label">Include Tools</label>
-                            <p class="text-muted small">Always allow these specific tools (in addition to categories)</p>
-                            <select class="form-select" name="include_tools" id="include_tools" multiple size="8">
-                                {% for tool in available_tools %}
-                                <option value="{{ tool.name }}"
-                                        {% if profile and tool.name in profile.include_tools %}selected{% endif %}>
-                                    {{ tool.name }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                            <small class="text-muted">Hold Ctrl/Cmd to select multiple</small>
-                        </div>
-
-                        <!-- Exclude Tools -->
-                        <div class="col-md-6">
-                            <label class="form-label">Exclude Tools</label>
-                            <p class="text-muted small">Block these tools even if category allows them</p>
-                            <select class="form-select" name="exclude_tools" id="exclude_tools" multiple size="8">
-                                {% for tool in available_tools %}
-                                <option value="{{ tool.name }}"
-                                        {% if profile and tool.name in profile.exclude_tools %}selected{% endif %}>
-                                    {{ tool.name }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                            <small class="text-muted">Hold Ctrl/Cmd to select multiple</small>
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -189,14 +139,11 @@
                 <p><strong>1. Mode</strong><br>
                 Safe mode blocks write operations. Power mode allows all.</p>
 
-                <p><strong>2. Categories</strong><br>
-                Filter tools by category. Empty = all categories allowed.</p>
+                <p><strong>2. Tools</strong><br>
+                Select specific tools to restrict access. Leave empty to allow all tools.</p>
 
-                <p><strong>3. Include Tools</strong><br>
-                Always allow these tools, regardless of categories.</p>
-
-                <p class="mb-0"><strong>4. Exclude Tools</strong><br>
-                Block specific tools even if their category is allowed.</p>
+                <p class="mb-0"><strong>3. Tokens</strong><br>
+                After creating a profile, create MCP tokens under it. Each token inherits the profile's permissions.</p>
             </div>
         </div>
 

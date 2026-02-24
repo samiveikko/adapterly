@@ -26,7 +26,6 @@ from apps.mcp.models import (
     MCPAuditLog,
     Project,
     ProjectIntegration,
-    ToolCategory,
 )
 
 
@@ -248,9 +247,70 @@ def project_delete(request, slug):
 # ============================================================================
 
 
+def _sanitize_tool_name(name):
+    """Sanitize tool name to be MCP-compliant."""
+    name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+    name = re.sub(r"_+", "_", name)
+    name = name.strip("_")
+    name = name.lower()
+    return name
+
+
+def _get_integration_tools(integration):
+    """Load tools for an integration from Action models.
+
+    Returns a list of dicts with name, description, tool_type, is_enabled.
+    """
+    from apps.systems.models import Action
+
+    system = integration.system
+    allowed = integration.allowed_actions  # None = all, list = specific
+
+    actions = Action.objects.filter(
+        resource__interface__system=system,
+        is_mcp_enabled=True,
+        resource__interface__system__is_active=True,
+    ).select_related("resource__interface__system")
+
+    tools = []
+    for action in actions:
+        resource = action.resource
+        interface = resource.interface
+        tool_name = f"{system.alias}_{resource.alias or resource.name}_{action.alias or action.name}"
+        tool_name = _sanitize_tool_name(tool_name)
+
+        method = action.method.upper()
+        interface_type = interface.type.upper()
+        if interface_type == "GRAPHQL":
+            action_name_lower = (action.alias or action.name).lower()
+            if any(
+                prefix in action_name_lower
+                for prefix in ["create", "update", "delete", "add", "remove", "set", "mutate"]
+            ):
+                tool_type = "system_write"
+            else:
+                tool_type = "system_read"
+        elif method in ("GET", "HEAD", "OPTIONS"):
+            tool_type = "system_read"
+        else:
+            tool_type = "system_write"
+
+        description = action.description or f"{action.name} on {system.display_name} {resource.name}"
+        is_enabled = allowed is None or tool_name in allowed
+        tools.append(
+            {
+                "name": tool_name,
+                "description": description[:200],
+                "tool_type": tool_type,
+                "is_enabled": is_enabled,
+            }
+        )
+    return tools
+
+
 @login_required
 def project_integrations_view(request, slug):
-    """List integrations for a project (slug-based)."""
+    """List integrations for a project with inline tool selection."""
     from apps.systems.models import AccountSystem
 
     active_account, project = _get_project_for_account(request, slug)
@@ -262,20 +322,56 @@ def project_integrations_view(request, slug):
 
     integrations = ProjectIntegration.objects.filter(project=project).select_related("system")
 
+    # Handle POST: save tool selections
+    if request.method == "POST" and active_account_user:
+        for integration in integrations:
+            system_alias = integration.system.alias
+            select_mode = request.POST.get(f"mode_{system_alias}", "all")
+            if select_mode == "all":
+                integration.allowed_actions = None
+            else:
+                selected = request.POST.getlist(f"tools_{system_alias}")
+                integration.allowed_actions = selected if selected else []
+            integration.save(update_fields=["allowed_actions"])
+        messages.success(request, "Tool selection saved")
+        return redirect("projects:integrations", slug=slug)
+
     # Check which project-credential integrations have credentials configured
     project_cred_system_ids = set(
         AccountSystem.objects.filter(account=active_account, project=project).values_list("system_id", flat=True)
     )
+
+    # Build tool groups per integration
+    tool_groups = []
     for integration in integrations:
         integration.has_project_credentials = (
             integration.credential_source != "project" or integration.system_id in project_cred_system_ids
         )
+
+        tools = _get_integration_tools(integration)
+        enabled_count = sum(1 for t in tools if t["is_enabled"])
+        tool_groups.append(
+            {
+                "integration": integration,
+                "system": integration.system.display_name,
+                "system_alias": integration.system.alias,
+                "tools": tools,
+                "select_mode": "all" if integration.allowed_actions is None else "custom",
+                "enabled_count": enabled_count,
+            }
+        )
+
+    total_tools = sum(len(g["tools"]) for g in tool_groups)
+    enabled_tools = sum(g["enabled_count"] for g in tool_groups)
 
     context = {
         "active_account": active_account,
         "active_account_user": active_account_user,
         "project": project,
         "integrations": integrations,
+        "tool_groups": tool_groups,
+        "total_tools": total_tools,
+        "enabled_tools": enabled_tools,
         "active_tab": "integrations",
     }
 
@@ -409,7 +505,18 @@ def project_integration_remove_view(request, slug, integration_id):
     integration = get_object_or_404(ProjectIntegration, id=integration_id, project=project)
 
     system_name = integration.system.display_name
+    system_id = integration.system_id
+
     integration.delete()
+
+    # Also clean up project-scoped AccountSystem credentials for this system
+    from apps.systems.models import AccountSystem
+
+    AccountSystem.objects.filter(
+        account=active_account,
+        system_id=system_id,
+        project=project,
+    ).delete()
 
     return JsonResponse({"success": True, "message": f"Integration with {system_name} removed"})
 
@@ -504,6 +611,17 @@ def project_integration_test_view(request, slug, integration_id):
 
 
 # ============================================================================
+# Project-scoped Tools (redirect to integrations)
+# ============================================================================
+
+
+@login_required
+def project_tools_view(request, slug):
+    """Redirect tools page to integrations (tools are now shown inline)."""
+    return redirect("projects:integrations", slug=slug)
+
+
+# ============================================================================
 # Project-scoped API Keys
 # ============================================================================
 
@@ -529,124 +647,6 @@ def project_api_keys_view(request, slug):
     }
 
     return render(request, "mcp/project_api_keys.html", context)
-
-
-# ============================================================================
-# Project-scoped Tools
-# ============================================================================
-
-
-def _sanitize_tool_name(name):
-    """Sanitize tool name to be MCP-compliant."""
-    name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
-    name = re.sub(r"_+", "_", name)
-    name = name.strip("_")
-    name = name.lower()
-    return name
-
-
-@login_required
-def project_tools_view(request, slug):
-    """Tools available for a specific project (from its integrations).
-
-    GET: display tools with selection checkboxes.
-    POST: save selected tools per integration (admin only).
-    """
-    active_account, project = _get_project_for_account(request, slug)
-    active_account_user = get_active_account_user(request)
-
-    if not active_account:
-        messages.error(request, "No active account")
-        return redirect("index")
-
-    integrations = ProjectIntegration.objects.filter(project=project, is_enabled=True).select_related("system")
-
-    from apps.systems.models import Action
-
-    # Handle POST: save tool selections
-    if request.method == "POST" and active_account_user:
-        for integration in integrations:
-            system_alias = integration.system.alias
-            select_mode = request.POST.get(f"mode_{system_alias}", "all")
-            if select_mode == "all":
-                integration.allowed_actions = None
-            else:
-                selected = request.POST.getlist(f"tools_{system_alias}")
-                integration.allowed_actions = selected if selected else []
-            integration.save(update_fields=["allowed_actions"])
-        messages.success(request, "Tool selection saved")
-        return redirect("projects:tools", slug=slug)
-
-    tool_groups = []
-    for integration in integrations:
-        system = integration.system
-        allowed = integration.allowed_actions  # None = all, list = specific
-        actions = Action.objects.filter(
-            resource__interface__system=system,
-            is_mcp_enabled=True,
-            resource__interface__system__is_active=True,
-        ).select_related("resource__interface__system")
-
-        tools = []
-        for action in actions:
-            resource = action.resource
-            interface = resource.interface
-            tool_name = f"{system.alias}_{resource.alias or resource.name}_{action.alias or action.name}"
-            tool_name = _sanitize_tool_name(tool_name)
-
-            method = action.method.upper()
-            interface_type = interface.type.upper()
-            if interface_type == "GRAPHQL":
-                action_name_lower = (action.alias or action.name).lower()
-                if any(
-                    prefix in action_name_lower
-                    for prefix in ["create", "update", "delete", "add", "remove", "set", "mutate"]
-                ):
-                    tool_type = "system_write"
-                else:
-                    tool_type = "system_read"
-            elif method in ("GET", "HEAD", "OPTIONS"):
-                tool_type = "system_read"
-            else:
-                tool_type = "system_write"
-
-            description = action.description or f"{action.name} on {system.display_name} {resource.name}"
-            is_enabled = allowed is None or tool_name in allowed
-            tools.append(
-                {
-                    "name": tool_name,
-                    "description": description[:200],
-                    "tool_type": tool_type,
-                    "is_enabled": is_enabled,
-                }
-            )
-
-        if tools:
-            enabled_count = sum(1 for t in tools if t["is_enabled"])
-            tool_groups.append(
-                {
-                    "system": system.display_name,
-                    "system_alias": system.alias,
-                    "tools": tools,
-                    "select_mode": "all" if allowed is None else "custom",
-                    "enabled_count": enabled_count,
-                }
-            )
-
-    total_tools = sum(len(g["tools"]) for g in tool_groups)
-    enabled_tools = sum(g["enabled_count"] for g in tool_groups)
-
-    context = {
-        "active_account": active_account,
-        "active_account_user": active_account_user,
-        "project": project,
-        "tool_groups": tool_groups,
-        "total_tools": total_tools,
-        "enabled_tools": enabled_tools,
-        "active_tab": "tools",
-    }
-
-    return render(request, "mcp/project_tools.html", context)
 
 
 # ============================================================================
@@ -701,6 +701,26 @@ def project_logs_view(request, slug):
 # ============================================================================
 
 
+def _get_project_tool_groups(project):
+    """Load all tools from project integrations, grouped by system.
+
+    Returns list of dicts: {system, system_alias, tools: [{name, description, tool_type}]}
+    """
+    integrations = ProjectIntegration.objects.filter(project=project, is_enabled=True).select_related("system")
+    groups = []
+    for integration in integrations:
+        tools = _get_integration_tools(integration)
+        if tools:
+            groups.append(
+                {
+                    "system": integration.system.display_name,
+                    "system_alias": integration.system.alias,
+                    "tools": tools,
+                }
+            )
+    return groups
+
+
 @login_required
 def project_profiles_view(request, slug):
     """List agent profiles for a project."""
@@ -711,9 +731,7 @@ def project_profiles_view(request, slug):
         messages.error(request, "No active account")
         return redirect("index")
 
-    profiles = (
-        AgentProfile.objects.filter(project=project).prefetch_related("api_keys", "allowed_categories").order_by("name")
-    )
+    profiles = AgentProfile.objects.filter(project=project).prefetch_related("api_keys").order_by("name")
 
     context = {
         "active_account": active_account,
@@ -736,8 +754,6 @@ def project_profile_create_view(request, slug):
         messages.error(request, "Admin access required")
         return redirect("projects:list")
 
-    categories = ToolCategory.objects.filter(account=active_account)
-
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
         description = request.POST.get("description", "").strip()
@@ -748,37 +764,28 @@ def project_profile_create_view(request, slug):
         elif AgentProfile.objects.filter(project=project, name=name).exists():
             messages.error(request, f"A profile named '{name}' already exists in this project")
         else:
+            include_tools = request.POST.getlist("tools")
+
             profile = AgentProfile.objects.create(
                 account=active_account,
                 project=project,
                 name=name,
                 description=description,
                 mode=mode,
+                include_tools=include_tools,
             )
-            # Set categories
-            cat_ids = request.POST.getlist("categories")
-            if cat_ids:
-                profile.allowed_categories.set(ToolCategory.objects.filter(id__in=cat_ids, account=active_account))
-
-            # Include/exclude tools
-            include_tools = request.POST.getlist("include_tools")
-            exclude_tools = request.POST.getlist("exclude_tools")
-            if include_tools:
-                profile.include_tools = include_tools
-            if exclude_tools:
-                profile.exclude_tools = exclude_tools
-            if include_tools or exclude_tools:
-                profile.save(update_fields=["include_tools", "exclude_tools"])
 
             messages.success(request, f"Profile '{name}' created")
             return redirect("projects:profile_detail", slug=slug, profile_id=profile.id)
+
+    tool_groups = _get_project_tool_groups(project)
 
     context = {
         "active_account": active_account,
         "active_account_user": active_account_user,
         "project": project,
-        "categories": categories,
-        "selected_categories": [],
+        "tool_groups": tool_groups,
+        "selected_tools": [],
         "active_tab": "profiles",
     }
 
@@ -821,8 +828,6 @@ def project_profile_edit_view(request, slug, profile_id):
         return redirect("projects:list")
 
     profile = get_object_or_404(AgentProfile, id=profile_id, project=project)
-    categories = ToolCategory.objects.filter(account=active_account)
-    selected_categories = list(profile.allowed_categories.values_list("id", flat=True))
 
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
@@ -839,29 +844,22 @@ def project_profile_edit_view(request, slug, profile_id):
             profile.description = description
             profile.mode = mode
             profile.is_active = is_active
-
-            # Include/exclude tools
-            include_tools = request.POST.getlist("include_tools")
-            exclude_tools = request.POST.getlist("exclude_tools")
-            profile.include_tools = include_tools
-            profile.exclude_tools = exclude_tools
-
+            profile.include_tools = request.POST.getlist("tools")
             profile.save()
-
-            # Set categories
-            cat_ids = request.POST.getlist("categories")
-            profile.allowed_categories.set(ToolCategory.objects.filter(id__in=cat_ids, account=active_account))
 
             messages.success(request, f"Profile '{name}' updated")
             return redirect("projects:profile_detail", slug=slug, profile_id=profile.id)
+
+    tool_groups = _get_project_tool_groups(project)
+    selected_tools = profile.include_tools or []
 
     context = {
         "active_account": active_account,
         "active_account_user": active_account_user,
         "project": project,
         "profile": profile,
-        "categories": categories,
-        "selected_categories": selected_categories,
+        "tool_groups": tool_groups,
+        "selected_tools": selected_tools,
         "active_tab": "profiles",
     }
 

@@ -301,22 +301,33 @@ def toggle_system_status(request, system_id):
 def delete_system_config(request, system_id):
     """
     Delete system configuration entirely.
+    Removes all AccountSystem records (both account-level and project-scoped)
+    and any related ProjectIntegrations for this system.
     """
     active_account = get_active_account(request)
 
     if not active_account:
         return JsonResponse({"error": "No active account."}, status=403)
 
-    try:
-        account_system = AccountSystem.objects.get(account=active_account, system_id=system_id)
+    account_systems = AccountSystem.objects.filter(account=active_account, system_id=system_id)
 
-        system_name = account_system.system.display_name
-        account_system.delete()
-
-        return JsonResponse({"success": True, "message": f"System configuration {system_name} deleted successfully."})
-
-    except AccountSystem.DoesNotExist:
+    if not account_systems.exists():
         return JsonResponse({"error": "System configuration not found."}, status=404)
+
+    system_name = account_systems.first().system.display_name
+
+    # Also remove any ProjectIntegrations linked to this system for this account's projects
+    from apps.mcp.models import ProjectIntegration
+
+    ProjectIntegration.objects.filter(
+        project__account=active_account,
+        system_id=system_id,
+    ).delete()
+
+    count = account_systems.count()
+    account_systems.delete()
+
+    return JsonResponse({"success": True, "message": f"System configuration {system_name} deleted successfully ({count} credential(s) removed)."})
 
 
 @login_required

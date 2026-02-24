@@ -91,11 +91,9 @@
                         {% endif %}
                     </div>
                     <div class="col-md-4 mb-3">
-                        <small class="text-muted d-block mb-1">Categories</small>
-                        {% if profile.allowed_categories.count > 0 %}
-                            {% for cat in profile.allowed_categories.all %}
-                            <span class="badge bg-info me-1">{{ cat.name }}</span>
-                            {% endfor %}
+                        <small class="text-muted d-block mb-1">Tools</small>
+                        {% if profile.include_tools %}
+                        <span class="text-muted">{{ profile.include_tools|length }} tools allowed</span>
                         {% else %}
                         <span class="text-muted">All allowed</span>
                         {% endif %}
@@ -110,18 +108,10 @@
                     </div>
                 </div>
                 {% if profile.include_tools %}
-                <div class="mb-2">
-                    <small class="text-muted d-block mb-1">Included Tools</small>
+                <div class="mb-0">
+                    <small class="text-muted d-block mb-1">Allowed Tools</small>
                     {% for tool in profile.include_tools %}
                     <code class="me-1">{{ tool }}</code>
-                    {% endfor %}
-                </div>
-                {% endif %}
-                {% if profile.exclude_tools %}
-                <div>
-                    <small class="text-muted d-block mb-1">Excluded Tools</small>
-                    {% for tool in profile.exclude_tools %}
-                    <code class="me-1 text-danger">{{ tool }}</code>
                     {% endfor %}
                 </div>
                 {% endif %}

@@ -1,5 +1,5 @@
 """
-MCP Permission system with Safe/Power mode support and category-based access control.
+MCP Permission system with Safe/Power mode support and profile-based access control.
 """
 
 from __future__ import annotations
@@ -8,8 +8,6 @@ import fnmatch
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-
-from apps.mcp.categories import ToolCategoryResolver
 
 if TYPE_CHECKING:
     from apps.mcp.models import AgentProfile
@@ -33,7 +31,7 @@ class MCPPermissionChecker:
     - Safe Mode: Only read operations allowed
     - Power Mode: All operations allowed based on tool-specific permissions
 
-    Also supports category-based access control via ToolCategoryResolver or AgentProfile.
+    Also supports profile-based access control via AgentProfile.include_tools.
     """
 
     def __init__(
@@ -42,11 +40,7 @@ class MCPPermissionChecker:
         mode: str = "safe",
         allowed_tools: list | None = None,
         blocked_tools: list | None = None,
-        api_key_id: int | None = None,
-        project_identifier: str | None = None,
-        user_id: int | None = None,
         profile: AgentProfile | None = None,
-        allowed_categories: list | None = None,
     ):
         """
         Initialize permission checker.
@@ -56,23 +50,13 @@ class MCPPermissionChecker:
             mode: Either "safe" or "power"
             allowed_tools: List of allowed tool patterns (fnmatch)
             blocked_tools: List of blocked tool patterns (fnmatch)
-            api_key_id: Optional API key ID for category resolution
-            project_identifier: Optional project identifier for category resolution
-            user_id: Optional user ID for category resolution
             profile: Optional AgentProfile for profile-based access control
-            allowed_categories: Optional list of category keys to test (overrides policy lookup)
         """
         self.account_id = account_id
         self.mode = mode.lower()
         self.allowed_tools = allowed_tools or []
         self.blocked_tools = blocked_tools or []
         self.profile = profile
-        self.allowed_categories = allowed_categories  # For testing unsaved form values
-
-        # Initialize category resolver
-        self.category_resolver = ToolCategoryResolver(
-            account_id=account_id, api_key_id=api_key_id, project_identifier=project_identifier, user_id=user_id
-        )
 
         if self.mode not in ("safe", "power"):
             raise ValueError(f"Invalid mode: {mode}. Must be 'safe' or 'power'")
@@ -97,29 +81,10 @@ class MCPPermissionChecker:
             return PermissionResult(allowed=False, reason=f"Tool '{tool_name}' is explicitly blocked")
 
         # Check profile-based restrictions (if profile exists)
-        if self.profile:
-            # Get tool's categories
-            tool_categories = self.category_resolver.get_tool_categories(tool_name)
-            if not self.profile.is_tool_allowed(tool_name, tool_categories):
-                return PermissionResult(
-                    allowed=False, reason=f"Tool '{tool_name}' not allowed by profile '{self.profile.name}'"
-                )
-        elif self.allowed_categories is not None:
-            # Test mode: use provided categories directly
-            if len(self.allowed_categories) > 0:
-                tool_categories = self.category_resolver.get_tool_categories(tool_name)
-                if not tool_categories:
-                    return PermissionResult(allowed=False, reason=f"Tool '{tool_name}' has no category assigned")
-                if not any(cat in self.allowed_categories for cat in tool_categories):
-                    return PermissionResult(
-                        allowed=False,
-                        reason=f"Tool '{tool_name}' not in allowed categories ({', '.join(self.allowed_categories)})",
-                    )
-            # If allowed_categories is empty list, all tools are allowed (no category restriction)
-        else:
-            # Legacy: Check category-based restrictions via category resolver
-            if not self.category_resolver.is_tool_allowed(tool_name):
-                return PermissionResult(allowed=False, reason=f"Tool '{tool_name}' not in allowed categories")
+        if self.profile and not self.profile.is_tool_allowed(tool_name):
+            return PermissionResult(
+                allowed=False, reason=f"Tool '{tool_name}' not allowed by profile '{self.profile.name}'"
+            )
 
         # Resource access (read-only) is always allowed
         if tool_type == "resource":
@@ -169,13 +134,13 @@ class MCPPermissionChecker:
             - include_write: Whether to include write tools
             - allowed_patterns: Patterns to include
             - blocked_patterns: Patterns to exclude
-            - category_resolver: ToolCategoryResolver for category filtering
+            - profile: AgentProfile for tool filtering
         """
         return {
             "include_write": self.mode == "power",
             "allowed_patterns": self.allowed_tools,
             "blocked_patterns": self.blocked_tools,
-            "category_resolver": self.category_resolver,
+            "profile": self.profile,
         }
 
 
@@ -183,7 +148,6 @@ def get_permission_checker(
     account_id: int,
     api_key: str | None = None,
     mode: str | None = None,
-    project_identifier: str | None = None,
     user_id: int | None = None,
 ) -> MCPPermissionChecker:
     """
@@ -193,8 +157,7 @@ def get_permission_checker(
         account_id: Account ID
         api_key: Optional API key to load permissions from
         mode: Override mode (if not specified, uses API key's mode or 'safe')
-        project_identifier: Optional project identifier for category resolution
-        user_id: Optional user ID for category resolution
+        user_id: Optional user ID
 
     Returns:
         Configured MCPPermissionChecker
@@ -204,7 +167,6 @@ def get_permission_checker(
     allowed_tools = []
     blocked_tools = []
     resolved_mode = mode or "safe"
-    api_key_id = None
     profile = None
 
     if api_key:
@@ -218,7 +180,6 @@ def get_permission_checker(
             )
 
             if key_obj and key_obj.check_key(api_key):
-                api_key_id = key_obj.id
                 key_obj.mark_used()
 
                 # Check if API key has a profile
@@ -226,9 +187,6 @@ def get_permission_checker(
                     profile = key_obj.profile
                     if not mode:
                         resolved_mode = profile.mode
-                    # Profile's include/exclude tools
-                    allowed_tools = profile.include_tools or []
-                    blocked_tools = profile.exclude_tools or []
                 else:
                     # Legacy: use API key's direct settings
                     if not mode:
@@ -243,8 +201,5 @@ def get_permission_checker(
         mode=resolved_mode,
         allowed_tools=allowed_tools,
         blocked_tools=blocked_tools,
-        api_key_id=api_key_id,
-        project_identifier=project_identifier,
-        user_id=user_id,
         profile=profile,
     )

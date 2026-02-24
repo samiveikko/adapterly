@@ -14,7 +14,6 @@ urlpatterns = [
     # User-facing pages
     path("", views.mcp_dashboard, name="dashboard"),
     path("tools/", views.mcp_tools, name="tools"),
-    path("test/", views.mcp_category_tester, name="category_tester"),
     path("api-keys/", views.mcp_api_keys, name="api_keys"),
     path("logs/", views.mcp_logs, name="logs"),
     path("logs/<int:log_id>/", views.mcp_log_detail, name="log_detail"),
@@ -24,14 +23,6 @@ urlpatterns = [
     path("profiles/create/", views.agent_profile_create, name="profile_create"),
     path("profiles/<int:profile_id>/edit/", views.agent_profile_edit, name="profile_edit"),
     path("profiles/<int:profile_id>/delete/", views.agent_profile_delete, name="profile_delete"),
-    # Tool Categories
-    path("categories/", views.tool_categories, name="categories"),
-    path("categories/create/", views.tool_category_create, name="category_create"),
-    path("categories/update/", views.tool_category_update, name="category_update"),
-    path("categories/delete/", views.tool_category_delete, name="category_delete"),
-    path("categories/mappings/create/", views.tool_mapping_create, name="mapping_create"),
-    path("categories/mappings/delete/", views.tool_mapping_delete, name="mapping_delete"),
-    path("categories/tools/assign/", views.tool_assign_category, name="tool_assign_category"),
     # API Key Edit & Test
     path("api-keys/<int:key_id>/edit/", views.api_key_edit, name="api_key_edit"),
     path("api-keys/<int:key_id>/test/", views.api_key_test, name="api_key_test"),
@@ -40,7 +31,6 @@ urlpatterns = [
     path("api-keys/update/", views.mcp_update_api_key, name="update_api_key"),
     path("api-keys/delete/", views.mcp_delete_api_key, name="delete_api_key"),
     path("api-keys/toggle/", views.mcp_toggle_api_key, name="toggle_api_key"),
-    path("policies/agent/save/", views.mcp_save_agent_policy, name="save_agent_policy"),
     # Project Tools (AJAX)
     path("projects/<int:project_id>/tools/", views.project_tools_json, name="project_tools_json"),
     # Project Integrations

@@ -245,20 +245,9 @@ class AgentProfile(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
 
-    # Category-based access control
-    allowed_categories = models.ManyToManyField(
-        "ToolCategory",
-        blank=True,
-        related_name="profiles",
-        help_text="Categories this profile can access. Empty = all categories allowed.",
-    )
-
-    # Fine-grained tool control
+    # Tool access control
     include_tools = models.JSONField(
-        default=list, blank=True, help_text="Specific tool names to include (in addition to categories)"
-    )
-    exclude_tools = models.JSONField(
-        default=list, blank=True, help_text="Specific tool names to exclude (even if category allows)"
+        default=list, blank=True, help_text="Allowed tool names. Empty list = all tools allowed."
     )
 
     # Mode setting
@@ -285,40 +274,19 @@ class AgentProfile(models.Model):
     def __str__(self):
         return self.name
 
-    def get_allowed_category_keys(self):
-        """Get list of allowed category keys."""
-        return list(self.allowed_categories.values_list("key", flat=True))
-
-    def is_tool_allowed(self, tool_name: str, tool_categories: list = None) -> bool:
+    def is_tool_allowed(self, tool_name: str) -> bool:
         """
         Check if a tool is allowed by this profile.
 
         Args:
             tool_name: Name of the tool
-            tool_categories: List of category keys the tool belongs to
 
         Returns:
             True if tool is allowed
         """
-        # Check explicit exclusions first
-        if tool_name in self.exclude_tools:
-            return False
-
-        # Check explicit inclusions
-        if tool_name in self.include_tools:
+        if not self.include_tools:
             return True
-
-        # Check categories
-        allowed_cats = self.get_allowed_category_keys()
-        if not allowed_cats:
-            # No category restrictions
-            return True
-
-        if tool_categories:
-            # Tool is allowed if it belongs to any allowed category
-            return any(cat in allowed_cats for cat in tool_categories)
-
-        return False
+        return tool_name in self.include_tools
 
 
 class Project(models.Model):
@@ -339,11 +307,6 @@ class Project(models.Model):
     # External system mappings: {"jira": "PROJ-123", "github": "org/repo"}
     external_mappings = models.JSONField(
         default=dict, blank=True, help_text="Maps system aliases to external project identifiers"
-    )
-
-    # Category restrictions (null = no restriction)
-    allowed_categories = models.JSONField(
-        null=True, blank=True, help_text="List of allowed category keys. Null = no restriction."
     )
 
     is_active = models.BooleanField(default=True)
@@ -456,136 +419,6 @@ class MCPApiKey(models.Model):
         """Update last used timestamp."""
         self.last_used_at = timezone.now()
         self.save(update_fields=["last_used_at"])
-
-
-class ToolCategory(models.Model):
-    """
-    Defines a category of tools with associated risk level.
-    Categories are used to control which tools agents can access.
-    """
-
-    RISK_LEVEL_CHOICES = [
-        ("low", "Low"),
-        ("medium", "Medium"),
-        ("high", "High"),
-    ]
-
-    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="tool_categories")
-    key = models.CharField(
-        max_length=100, db_index=True, help_text='Unique identifier for the category (e.g., "crm.read", "system.write")'
-    )
-    name = models.CharField(max_length=200)
-    description = models.TextField(blank=True)
-    risk_level = models.CharField(max_length=20, choices=RISK_LEVEL_CHOICES, default="medium")
-    is_global = models.BooleanField(default=False, help_text="If true, this category is available to all accounts")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["key"]
-        unique_together = [("account", "key")]
-        verbose_name = "Tool Category"
-        verbose_name_plural = "Tool Categories"
-
-    def __str__(self):
-        return f"{self.name} ({self.key})"
-
-
-class ToolCategoryMapping(models.Model):
-    """
-    Maps tool patterns to categories using fnmatch patterns.
-    """
-
-    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="tool_category_mappings")
-    tool_key_pattern = models.CharField(
-        max_length=255, help_text='fnmatch pattern to match tool names (e.g., "salesforce_*", "*_read")'
-    )
-    category = models.ForeignKey(ToolCategory, on_delete=models.CASCADE, related_name="mappings")
-    is_auto = models.BooleanField(default=False, help_text="If true, this mapping was auto-generated")
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["tool_key_pattern"]
-        unique_together = [("account", "tool_key_pattern", "category")]
-        verbose_name = "Tool Category Mapping"
-        verbose_name_plural = "Tool Category Mappings"
-
-    def __str__(self):
-        return f"{self.tool_key_pattern} -> {self.category.key}"
-
-
-class AgentPolicy(models.Model):
-    """
-    Policy defining which categories an API key (agent) is allowed to access.
-    """
-
-    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="agent_policies")
-    api_key = models.OneToOneField(MCPApiKey, on_delete=models.CASCADE, related_name="policy")
-    name = models.CharField(max_length=200, blank=True)
-    allowed_categories = models.JSONField(
-        default=list, help_text="List of allowed category keys. Empty list = all categories allowed."
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["-created_at"]
-        verbose_name = "Agent Policy"
-        verbose_name_plural = "Agent Policies"
-
-    def __str__(self):
-        key_name = self.api_key.name if self.api_key else "Unknown"
-        return f"Policy for {key_name}"
-
-
-class ProjectPolicy(models.Model):
-    """
-    Policy defining which categories are allowed for a specific project.
-    """
-
-    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="project_policies")
-    project_identifier = models.CharField(max_length=255, help_text='Project identifier (e.g., "PROJ-*")')
-    name = models.CharField(max_length=200)
-    allowed_categories = models.JSONField(
-        null=True, blank=True, help_text="List of allowed category keys. Null = no restriction."
-    )
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["project_identifier"]
-        unique_together = [("account", "project_identifier")]
-        verbose_name = "Project Policy"
-        verbose_name_plural = "Project Policies"
-
-    def __str__(self):
-        return f"{self.name} ({self.project_identifier})"
-
-
-class UserPolicy(models.Model):
-    """
-    Policy defining which categories a specific user is allowed to use.
-    """
-
-    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="user_policies")
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="mcp_policies")
-    allowed_categories = models.JSONField(
-        null=True, blank=True, help_text="List of allowed category keys. Null = no restriction."
-    )
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["-created_at"]
-        unique_together = [("account", "user")]
-        verbose_name = "User Policy"
-        verbose_name_plural = "User Policies"
-
-    def __str__(self):
-        username = self.user.username if self.user else "Unknown"
-        return f"Policy for {username}"
 
 
 class ErrorDiagnostic(models.Model):

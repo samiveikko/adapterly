@@ -111,40 +111,57 @@
                 </div>
             </div>
 
-            <!-- Categories -->
+            <!-- Allowed Tools -->
             <div class="card shadow-sm border-0 mb-4">
                 <div class="card-header bg-white border-bottom">
-                    <h6 class="mb-0"><i class="bi bi-tags text-secondary"></i> Allowed Categories</h6>
+                    <h6 class="mb-0"><i class="bi bi-tools text-secondary"></i> Allowed Tools</h6>
                 </div>
                 <div class="card-body">
                     <p class="text-muted small mb-3">
-                        Select which tool categories this profile can access. Leave empty to allow all categories.
+                        Select which tools this profile can access. Leave all unchecked to allow all tools.
                     </p>
 
-                    {% if categories %}
-                    <div class="row">
-                        {% for cat in categories %}
-                        <div class="col-md-6 mb-2">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox"
-                                       name="categories" value="{{ cat.id }}"
-                                       id="cat_{{ cat.id }}"
-                                       {% if cat.id in selected_categories %}checked{% endif %}>
-                                <label class="form-check-label" for="cat_{{ cat.id }}">
-                                    {{ cat.name }}
-                                    <span class="badge {% if cat.risk_level == 'low' %}bg-success{% elif cat.risk_level == 'medium' %}bg-warning text-dark{% else %}bg-danger{% endif %} ms-1">
-                                        {{ cat.get_risk_level_display }}
-                                    </span>
-                                    <small class="d-block text-muted">{{ cat.key }}</small>
-                                </label>
+                    {% if tool_groups %}
+                    {% for group in tool_groups %}
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="mb-0">
+                                <i class="bi bi-plug text-info"></i>
+                                {{ group.system_name }}
+                                <small class="text-muted">({{ group.tools|length }} tools)</small>
+                            </h6>
+                            <div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary select-all-btn"
+                                        data-group="{{ group.system_alias }}">Select All</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary deselect-all-btn"
+                                        data-group="{{ group.system_alias }}">Deselect All</button>
                             </div>
                         </div>
-                        {% endfor %}
+                        <div class="row">
+                            {% for tool in group.tools %}
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    <input class="form-check-input tool-checkbox" type="checkbox"
+                                           name="tools" value="{{ tool.name }}"
+                                           id="tool_{{ tool.name }}"
+                                           data-group="{{ group.system_alias }}"
+                                           {% if tool.name in selected_tools %}checked{% endif %}>
+                                    <label class="form-check-label" for="tool_{{ tool.name }}">
+                                        <code>{{ tool.name }}</code>
+                                        {% if tool.description %}
+                                        <small class="d-block text-muted">{{ tool.description|truncatewords:10 }}</small>
+                                        {% endif %}
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
                     </div>
+                    {% endfor %}
                     {% else %}
                     <div class="alert alert-info mb-0">
                         <i class="bi bi-info-circle"></i>
-                        No categories defined yet. All tools will be allowed.
+                        No integrations configured yet. All tools will be allowed. Add integrations first.
                     </div>
                     {% endif %}
                 </div>
@@ -178,8 +195,8 @@
                 <p><strong>1. Mode</strong><br>
                 Safe mode blocks write operations. Power mode allows all.</p>
 
-                <p><strong>2. Categories</strong><br>
-                Filter tools by category. Empty = all categories allowed.</p>
+                <p><strong>2. Tools</strong><br>
+                Select specific tools to restrict access. Leave all unchecked to allow all tools.</p>
 
                 <p class="mb-0"><strong>3. Tokens</strong><br>
                 After creating a profile, create MCP tokens under it. Each token inherits the profile's permissions.</p>
@@ -205,4 +222,19 @@
         {% endif %}
     </div>
 </div>
+
+<script>
+document.querySelectorAll('.select-all-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const group = btn.dataset.group;
+        document.querySelectorAll(`.tool-checkbox[data-group="${group}"]`).forEach(cb => cb.checked = true);
+    });
+});
+document.querySelectorAll('.deselect-all-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const group = btn.dataset.group;
+        document.querySelectorAll(`.tool-checkbox[data-group="${group}"]`).forEach(cb => cb.checked = false);
+    });
+});
+</script>
 {% endblock %}

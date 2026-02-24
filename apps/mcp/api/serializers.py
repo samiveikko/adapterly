@@ -5,17 +5,12 @@ Serializers for MCP API.
 from rest_framework import serializers
 
 from apps.mcp.models import (
-    AgentPolicy,
     AgentProfile,
     MCPApiKey,
     MCPAuditLog,
     MCPSession,
     Project,
     ProjectIntegration,
-    ProjectPolicy,
-    ToolCategory,
-    ToolCategoryMapping,
-    UserPolicy,
 )
 
 
@@ -174,117 +169,6 @@ class MCPAuditLogSummarySerializer(serializers.Serializer):
     date_range = serializers.DictField()
 
 
-class ToolCategorySerializer(serializers.ModelSerializer):
-    """Serializer for tool categories."""
-
-    class Meta:
-        model = ToolCategory
-        fields = [
-            "id",
-            "account",
-            "key",
-            "name",
-            "description",
-            "risk_level",
-            "is_global",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["created_at", "updated_at"]
-
-
-class ToolCategoryMappingSerializer(serializers.ModelSerializer):
-    """Serializer for tool category mappings."""
-
-    category_key = serializers.CharField(source="category.key", read_only=True)
-    category_name = serializers.CharField(source="category.name", read_only=True)
-
-    class Meta:
-        model = ToolCategoryMapping
-        fields = [
-            "id",
-            "account",
-            "tool_key_pattern",
-            "category",
-            "category_key",
-            "category_name",
-            "is_auto",
-            "created_at",
-        ]
-        read_only_fields = ["created_at"]
-
-
-class AgentPolicySerializer(serializers.ModelSerializer):
-    """Serializer for agent policies."""
-
-    api_key_name = serializers.CharField(source="api_key.name", read_only=True)
-    api_key_prefix = serializers.CharField(source="api_key.key_prefix", read_only=True)
-
-    class Meta:
-        model = AgentPolicy
-        fields = [
-            "id",
-            "account",
-            "api_key",
-            "api_key_name",
-            "api_key_prefix",
-            "name",
-            "allowed_categories",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["created_at", "updated_at"]
-
-
-class ProjectPolicySerializer(serializers.ModelSerializer):
-    """Serializer for project policies."""
-
-    class Meta:
-        model = ProjectPolicy
-        fields = [
-            "id",
-            "account",
-            "project_identifier",
-            "name",
-            "allowed_categories",
-            "is_active",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["created_at", "updated_at"]
-
-
-class UserPolicySerializer(serializers.ModelSerializer):
-    """Serializer for user policies."""
-
-    username = serializers.CharField(source="user.username", read_only=True)
-
-    class Meta:
-        model = UserPolicy
-        fields = [
-            "id",
-            "account",
-            "user",
-            "username",
-            "allowed_categories",
-            "is_active",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["created_at", "updated_at"]
-
-
-class EffectiveCategoriesSerializer(serializers.Serializer):
-    """Serializer for effective categories resolution result."""
-
-    effective_categories = serializers.ListField(child=serializers.CharField(), allow_null=True)
-    agent_categories = serializers.ListField(child=serializers.CharField(), allow_null=True)
-    project_categories = serializers.ListField(child=serializers.CharField(), allow_null=True)
-    user_categories = serializers.ListField(child=serializers.CharField(), allow_null=True)
-    is_restricted = serializers.BooleanField()
-    all_allowed = serializers.BooleanField()
-
-
 class ProjectIntegrationSerializer(serializers.ModelSerializer):
     """Serializer for project integrations."""
 
@@ -315,7 +199,6 @@ class ProjectIntegrationSerializer(serializers.ModelSerializer):
 class AgentProfileSerializer(serializers.ModelSerializer):
     """Serializer for agent profiles."""
 
-    allowed_categories = serializers.SerializerMethodField()
     project_slug = serializers.CharField(source="project.slug", read_only=True)
 
     class Meta:
@@ -327,14 +210,9 @@ class AgentProfileSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "mode",
-            "allowed_categories",
             "include_tools",
-            "exclude_tools",
             "is_active",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
-
-    def get_allowed_categories(self, obj):
-        return list(obj.allowed_categories.values_list("key", flat=True))

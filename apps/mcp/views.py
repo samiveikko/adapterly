@@ -17,17 +17,12 @@ from django.views.decorators.http import require_POST
 
 from apps.accounts.utils import get_active_account, get_active_account_user
 from apps.mcp.models import (
-    AgentPolicy,
     AgentProfile,
     MCPApiKey,
     MCPAuditLog,
     MCPSession,
     Project,
     ProjectIntegration,
-    ProjectPolicy,
-    ToolCategory,
-    ToolCategoryMapping,
-    UserPolicy,
 )
 
 
@@ -590,7 +585,7 @@ def agent_profiles(request):
         messages.error(request, "Admin access required")
         return redirect("index")
 
-    profiles = AgentProfile.objects.filter(account=active_account).prefetch_related("allowed_categories", "api_keys")
+    profiles = AgentProfile.objects.filter(account=active_account).prefetch_related("api_keys")
 
     context = {
         "active_account": active_account,
@@ -611,34 +606,26 @@ def agent_profile_create(request):
         messages.error(request, "Admin access required")
         return redirect("mcp:profiles")
 
-    categories = ToolCategory.objects.filter(account=active_account)
-
-    # Get available tools for selection
     available_tools = _get_available_tools(active_account)
 
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
         description = request.POST.get("description", "").strip()
         mode = request.POST.get("mode", "safe")
-        category_ids = request.POST.getlist("categories")
         include_tools = request.POST.getlist("include_tools")
-        exclude_tools = request.POST.getlist("exclude_tools")
 
         if not name:
             messages.error(request, "Name is required")
         elif AgentProfile.objects.filter(account=active_account, name=name).exists():
             messages.error(request, "A profile with this name already exists")
         else:
-            profile = AgentProfile.objects.create(
+            AgentProfile.objects.create(
                 account=active_account,
                 name=name,
                 description=description,
                 mode=mode,
                 include_tools=include_tools,
-                exclude_tools=exclude_tools,
             )
-            if category_ids:
-                profile.allowed_categories.set(category_ids)
 
             messages.success(request, f"Profile '{name}' created successfully")
             return redirect("mcp:profiles")
@@ -646,7 +633,6 @@ def agent_profile_create(request):
     context = {
         "active_account": active_account,
         "active_account_user": active_account_user,
-        "categories": categories,
         "available_tools": available_tools,
     }
 
@@ -664,16 +650,13 @@ def agent_profile_edit(request, profile_id):
         return redirect("mcp:profiles")
 
     profile = get_object_or_404(AgentProfile, id=profile_id, account=active_account)
-    categories = ToolCategory.objects.filter(account=active_account)
     available_tools = _get_available_tools(active_account)
 
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
         description = request.POST.get("description", "").strip()
         mode = request.POST.get("mode", "safe")
-        category_ids = request.POST.getlist("categories")
         include_tools = request.POST.getlist("include_tools")
-        exclude_tools = request.POST.getlist("exclude_tools")
         is_active = request.POST.get("is_active") == "on"
 
         if not name:
@@ -685,11 +668,8 @@ def agent_profile_edit(request, profile_id):
             profile.description = description
             profile.mode = mode
             profile.include_tools = include_tools
-            profile.exclude_tools = exclude_tools
             profile.is_active = is_active
             profile.save()
-
-            profile.allowed_categories.set(category_ids)
 
             messages.success(request, f"Profile '{name}' updated successfully")
             return redirect("mcp:profiles")
@@ -698,9 +678,7 @@ def agent_profile_edit(request, profile_id):
         "active_account": active_account,
         "active_account_user": active_account_user,
         "profile": profile,
-        "categories": categories,
         "available_tools": available_tools,
-        "selected_categories": list(profile.allowed_categories.values_list("id", flat=True)),
     }
 
     return render(request, "mcp/profile_form.html", context)
@@ -753,248 +731,6 @@ def _get_available_tools(account):
     return tools
 
 
-# ============================================================================
-# Tool Category Management (kept for backward compatibility)
-# ============================================================================
-
-
-@login_required
-def tool_categories(request):
-    """List and manage tool categories."""
-    active_account = get_active_account(request)
-    active_account_user = get_active_account_user(request)
-
-    if not active_account:
-        messages.error(request, "No active account")
-        return redirect("index")
-
-    if not active_account_user.is_admin:
-        messages.error(request, "Admin access required")
-        return redirect("index")
-
-    import json
-
-    categories = ToolCategory.objects.filter(account=active_account).annotate(mapping_count=Count("mappings"))
-    mappings = ToolCategoryMapping.objects.filter(account=active_account).select_related("category")
-
-    # Get all available tools
-    available_tools = _get_available_tools(active_account)
-
-    # Convert to JSON-safe format for JavaScript
-    tools_json = json.dumps(available_tools)
-
-    context = {
-        "active_account": active_account,
-        "active_account_user": active_account_user,
-        "categories": categories,
-        "mappings": mappings,
-        "available_tools": tools_json,
-    }
-
-    return render(request, "mcp/categories.html", context)
-
-
-@login_required
-@require_POST
-def tool_category_create(request):
-    """Create a new tool category."""
-    active_account = get_active_account(request)
-    active_account_user = get_active_account_user(request)
-
-    if not active_account or not active_account_user.is_admin:
-        return JsonResponse({"success": False, "error": "No permission"}, status=403)
-
-    key = request.POST.get("key", "").strip().lower()
-    name = request.POST.get("name", "").strip()
-    description = request.POST.get("description", "").strip()
-    risk_level = request.POST.get("risk_level", "low")
-
-    if not key:
-        return JsonResponse({"success": False, "error": "Key is required"})
-
-    if not name:
-        return JsonResponse({"success": False, "error": "Name is required"})
-
-    if not re.match(r"^[a-z][a-z0-9_]*$", key):
-        return JsonResponse(
-            {
-                "success": False,
-                "error": "Key must start with a letter and contain only lowercase letters, numbers, and underscores",
-            }
-        )
-
-    if ToolCategory.objects.filter(account=active_account, key=key).exists():
-        return JsonResponse({"success": False, "error": "A category with this key already exists"})
-
-    if risk_level not in ("low", "medium", "high"):
-        risk_level = "low"
-
-    category = ToolCategory.objects.create(
-        account=active_account, key=key, name=name, description=description, risk_level=risk_level
-    )
-
-    return JsonResponse(
-        {
-            "success": True,
-            "category": {
-                "id": category.id,
-                "key": category.key,
-                "name": category.name,
-                "risk_level": category.risk_level,
-            },
-        }
-    )
-
-
-@login_required
-@require_POST
-def tool_category_update(request):
-    """Update a tool category."""
-    active_account = get_active_account(request)
-    active_account_user = get_active_account_user(request)
-
-    if not active_account or not active_account_user.is_admin:
-        return JsonResponse({"success": False, "error": "No permission"}, status=403)
-
-    category_id = request.POST.get("category_id")
-    name = request.POST.get("name", "").strip()
-    description = request.POST.get("description", "").strip()
-    risk_level = request.POST.get("risk_level", "low")
-
-    if not name:
-        return JsonResponse({"success": False, "error": "Name is required"})
-
-    try:
-        category = ToolCategory.objects.get(id=category_id, account=active_account)
-    except ToolCategory.DoesNotExist:
-        return JsonResponse({"success": False, "error": "Category not found"})
-
-    if risk_level not in ("low", "medium", "high"):
-        risk_level = "low"
-
-    category.name = name
-    category.description = description
-    category.risk_level = risk_level
-    category.save()
-
-    return JsonResponse(
-        {
-            "success": True,
-            "category": {
-                "id": category.id,
-                "key": category.key,
-                "name": category.name,
-                "risk_level": category.risk_level,
-            },
-        }
-    )
-
-
-@login_required
-@require_POST
-def tool_category_delete(request):
-    """Delete a tool category."""
-    active_account = get_active_account(request)
-    active_account_user = get_active_account_user(request)
-
-    if not active_account or not active_account_user.is_admin:
-        return JsonResponse({"success": False, "error": "No permission"}, status=403)
-
-    category_id = request.POST.get("category_id")
-
-    try:
-        category = ToolCategory.objects.get(id=category_id, account=active_account)
-    except ToolCategory.DoesNotExist:
-        return JsonResponse({"success": False, "error": "Category not found"})
-
-    # Check if category is used in profiles
-    profile_count = category.profiles.count()
-    if profile_count > 0:
-        return JsonResponse(
-            {"success": False, "error": f"Cannot delete - category is used by {profile_count} profile(s)"}
-        )
-
-    category.delete()
-
-    return JsonResponse({"success": True})
-
-
-@login_required
-@require_POST
-def tool_mapping_create(request):
-    """Create a tool-category mapping."""
-    active_account = get_active_account(request)
-    active_account_user = get_active_account_user(request)
-
-    if not active_account or not active_account_user.is_admin:
-        return JsonResponse({"success": False, "error": "No permission"}, status=403)
-
-    tool_pattern = request.POST.get("tool_pattern", "").strip()
-    category_id = request.POST.get("category_id")
-
-    if not tool_pattern:
-        return JsonResponse({"success": False, "error": "Tool pattern is required"})
-
-    try:
-        category = ToolCategory.objects.get(id=category_id, account=active_account)
-    except ToolCategory.DoesNotExist:
-        return JsonResponse({"success": False, "error": "Category not found"})
-
-    # Check for duplicate
-    if ToolCategoryMapping.objects.filter(
-        account=active_account, tool_key_pattern=tool_pattern, category=category
-    ).exists():
-        return JsonResponse({"success": False, "error": "This mapping already exists"})
-
-    mapping = ToolCategoryMapping.objects.create(
-        account=active_account, tool_key_pattern=tool_pattern, category=category, is_auto=False
-    )
-
-    return JsonResponse(
-        {
-            "success": True,
-            "mapping": {
-                "id": mapping.id,
-                "tool_pattern": mapping.tool_key_pattern,
-                "category_key": category.key,
-                "category_name": category.name,
-            },
-        }
-    )
-
-
-@login_required
-@require_POST
-def tool_assign_category(request):
-    """Assign a tool to a category (or remove assignment)."""
-    active_account = get_active_account(request)
-    active_account_user = get_active_account_user(request)
-
-    if not active_account or not active_account_user.is_admin:
-        return JsonResponse({"success": False, "error": "No permission"}, status=403)
-
-    tool_name = request.POST.get("tool_name", "").strip()
-    category_id = request.POST.get("category_id", "").strip()
-
-    if not tool_name:
-        return JsonResponse({"success": False, "error": "Tool name is required"})
-
-    # Remove existing mapping for this tool
-    ToolCategoryMapping.objects.filter(account=active_account, tool_key_pattern=tool_name).delete()
-
-    # If category_id provided, create new mapping
-    if category_id:
-        try:
-            category = ToolCategory.objects.get(id=category_id, account=active_account)
-        except ToolCategory.DoesNotExist:
-            return JsonResponse({"success": False, "error": "Category not found"})
-
-        ToolCategoryMapping.objects.create(
-            account=active_account, tool_key_pattern=tool_name, category=category, is_auto=False
-        )
-        return JsonResponse({"success": True, "category_id": category.id, "category_name": category.name})
-
-    return JsonResponse({"success": True, "category_id": None})
 
 
 @login_required
@@ -1171,183 +907,6 @@ def api_key_edit(request, key_id):
     return render(request, "mcp/api_key_edit.html", context)
 
 
-@login_required
-@require_POST
-def tool_mapping_delete(request):
-    """Delete a tool-category mapping."""
-    active_account = get_active_account(request)
-    active_account_user = get_active_account_user(request)
-
-    if not active_account or not active_account_user.is_admin:
-        return JsonResponse({"success": False, "error": "No permission"}, status=403)
-
-    mapping_id = request.POST.get("mapping_id")
-
-    try:
-        mapping = ToolCategoryMapping.objects.get(id=mapping_id, account=active_account)
-    except ToolCategoryMapping.DoesNotExist:
-        return JsonResponse({"success": False, "error": "Mapping not found"})
-
-    mapping.delete()
-
-    return JsonResponse({"success": True})
-
-
-# ============================================================================
-# Category Tester (kept for backward compatibility)
-# ============================================================================
-
-
-@login_required
-def mcp_category_tester(request):
-    """Category resolution tester - see what tools an agent can access."""
-    import fnmatch
-
-    from apps.mcp.categories import ToolCategoryResolver
-
-    active_account = get_active_account(request)
-    active_account_user = get_active_account_user(request)
-
-    if not active_account:
-        messages.error(request, "No active account")
-        return redirect("index")
-
-    if not active_account_user.is_admin:
-        messages.error(request, "Admin access required")
-        return redirect("index")
-
-    # Get parameters
-    api_key_id = request.GET.get("api_key_id")
-    project_identifier = request.GET.get("project_identifier", "")
-    user_id = request.GET.get("user_id")
-
-    # Convert to int if provided
-    if api_key_id:
-        try:
-            api_key_id = int(api_key_id)
-        except ValueError:
-            api_key_id = None
-
-    if user_id:
-        try:
-            user_id = int(user_id)
-        except ValueError:
-            user_id = None
-
-    # Get data for dropdowns
-    api_keys = MCPApiKey.objects.filter(account=active_account, is_active=True)
-    project_policies = ProjectPolicy.objects.filter(account=active_account, is_active=True)
-    user_policies = UserPolicy.objects.filter(account=active_account, is_active=True).select_related("user")
-
-    # Get categories and mappings
-    categories = ToolCategory.objects.filter(account=active_account)
-    mappings = ToolCategoryMapping.objects.filter(account=active_account).select_related("category")
-
-    context = {
-        "active_account": active_account,
-        "active_account_user": active_account_user,
-        "api_keys": api_keys,
-        "project_policies": project_policies,
-        "user_policies": user_policies,
-        "categories": categories,
-        "mappings": mappings,
-        "selected_api_key_id": api_key_id,
-        "selected_project": project_identifier,
-        "selected_user_id": user_id,
-    }
-
-    # Get policies if selected
-    if api_key_id:
-        try:
-            context["agent_policy"] = AgentPolicy.objects.get(account=active_account, api_key_id=api_key_id)
-        except AgentPolicy.DoesNotExist:
-            context["agent_policy"] = None
-
-    if project_identifier:
-        try:
-            context["project_policy"] = ProjectPolicy.objects.get(
-                account=active_account, project_identifier=project_identifier, is_active=True
-            )
-        except ProjectPolicy.DoesNotExist:
-            # Try pattern match
-            for p in ProjectPolicy.objects.filter(account=active_account, is_active=True):
-                if fnmatch.fnmatch(project_identifier, p.project_identifier):
-                    context["project_policy"] = p
-                    context["project_policy_matched"] = True
-                    break
-
-    if user_id:
-        try:
-            context["user_policy"] = UserPolicy.objects.get(account=active_account, user_id=user_id, is_active=True)
-        except UserPolicy.DoesNotExist:
-            context["user_policy"] = None
-
-    # Resolve effective categories
-    resolver = ToolCategoryResolver(
-        account_id=active_account.id,
-        api_key_id=api_key_id,
-        project_identifier=project_identifier if project_identifier else None,
-        user_id=user_id,
-    )
-    result = resolver.get_effective_categories()
-
-    context["resolution"] = {
-        "effective_categories": list(result.effective_categories) if result.effective_categories else None,
-        "is_restricted": result.is_restricted,
-        "all_allowed": result.all_allowed,
-    }
-
-    # Test sample tools
-    sample_tools = [
-        "salesforce_contact_list",
-        "salesforce_contact_get",
-        "salesforce_contact_create",
-        "salesforce_contact_delete",
-        "hubspot_deal_list",
-        "hubspot_deal_create",
-    ]
-    tool_access = []
-    for tool in sample_tools:
-        tool_cats = resolver.get_tool_categories(tool)
-        is_allowed = resolver.is_tool_allowed(tool)
-        tool_access.append(
-            {
-                "name": tool,
-                "categories": tool_cats,
-                "allowed": is_allowed,
-            }
-        )
-    context["tool_access"] = tool_access
-
-    return render(request, "mcp/category_tester.html", context)
-
-
-@login_required
-@require_POST
-def mcp_save_agent_policy(request):
-    """Save agent policy (allowed categories)."""
-    active_account = get_active_account(request)
-    active_account_user = get_active_account_user(request)
-
-    if not active_account or not active_account_user.is_admin:
-        return JsonResponse({"success": False, "error": "No permission"}, status=403)
-
-    api_key_id = request.POST.get("api_key_id")
-    categories = request.POST.getlist("categories")
-
-    try:
-        api_key = MCPApiKey.objects.get(id=api_key_id, account=active_account)
-    except MCPApiKey.DoesNotExist:
-        return JsonResponse({"success": False, "error": "API key not found"})
-
-    # Create or update policy
-    policy, created = AgentPolicy.objects.update_or_create(
-        account=active_account,
-        api_key=api_key,
-        defaults={"allowed_categories": categories, "name": f"Policy for {api_key.name}"},
-    )
-
-    return JsonResponse({"success": True, "created": created, "categories": categories})
 
 
 # ============================================================================
@@ -1515,6 +1074,17 @@ def project_integration_remove(request, project_id, integration_id):
     integration = get_object_or_404(ProjectIntegration, id=integration_id, project=project)
 
     system_name = integration.system.display_name
+    system_id = integration.system_id
+
     integration.delete()
+
+    # Also clean up project-scoped AccountSystem credentials for this system
+    from apps.systems.models import AccountSystem
+
+    AccountSystem.objects.filter(
+        account=active_account,
+        system_id=system_id,
+        project=project,
+    ).delete()
 
     return JsonResponse({"success": True, "message": f"Integration with {system_name} removed"})
