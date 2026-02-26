@@ -323,7 +323,7 @@ class MCPServer:
                 session_id=self.session_id,
                 transport=self.transport_type,
                 mode=self.mode,
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.utcnow(),
             )
             self.db.add(audit_log)
             await self.db.commit()
