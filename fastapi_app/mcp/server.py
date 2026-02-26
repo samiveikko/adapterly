@@ -10,16 +10,36 @@ This is the core component that:
 
 import json
 import logging
+import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.mcp import Project
+from ..models.mcp import MCPAuditLog, Project
 from .permissions import MCPPermissionChecker
 from .tools import get_all_tools
 
 logger = logging.getLogger(__name__)
+
+
+_SENSITIVE_KEYS = {"password", "secret", "token", "api_key", "apikey", "credential", "auth"}
+
+
+def _sanitize_params(params: dict) -> dict:
+    """Remove sensitive values from parameters for audit logging."""
+    if not isinstance(params, dict):
+        return {}
+    sanitized = {}
+    for key, value in params.items():
+        if any(s in key.lower() for s in _SENSITIVE_KEYS):
+            sanitized[key] = "***"
+        elif isinstance(value, dict):
+            sanitized[key] = _sanitize_params(value)
+        else:
+            sanitized[key] = value
+    return sanitized
 
 
 class MCPServer:
@@ -217,7 +237,34 @@ class MCPServer:
             "project_id": self.project.id if self.project else None,
         }
 
-        result = await handler(ctx, **arguments)
+        start_time = time.time()
+        success = True
+        error_message = ""
+        result = None
+
+        try:
+            result = await handler(ctx, **arguments)
+
+            # Check if result indicates an error
+            if isinstance(result, dict) and "error" in result:
+                success = False
+                error_message = result["error"]
+        except Exception as e:
+            success = False
+            error_message = str(e)
+            raise
+        finally:
+            # Log to MCPAuditLog
+            duration_ms = int((time.time() - start_time) * 1000)
+            await self._log_tool_call(
+                tool_name=tool_name,
+                tool_type=tool_type,
+                parameters=arguments,
+                result=result,
+                duration_ms=duration_ms,
+                success=success,
+                error_message=error_message,
+            )
 
         # Format response
         if isinstance(result, dict) and "error" in result:
@@ -235,6 +282,57 @@ class MCPServer:
         content = [{"type": "text", "text": self._format_result(result)}]
 
         return {"content": content}
+
+    async def _log_tool_call(
+        self,
+        tool_name: str,
+        tool_type: str,
+        parameters: dict,
+        result: Any,
+        duration_ms: int,
+        success: bool,
+        error_message: str,
+    ) -> None:
+        """Log a tool call to MCPAuditLog."""
+        try:
+            # Sanitize parameters - remove sensitive fields
+            sanitized_params = _sanitize_params(parameters)
+
+            # Build result summary (truncated)
+            result_summary = {}
+            if isinstance(result, dict):
+                result_summary["success"] = result.get("success")
+                result_summary["status_code"] = result.get("status_code")
+                if "data" in result:
+                    data = result["data"]
+                    if isinstance(data, list):
+                        result_summary["item_count"] = len(data)
+                    elif isinstance(data, dict):
+                        result_summary["keys"] = list(data.keys())[:10]
+
+            audit_log = MCPAuditLog(
+                account_id=self.account_id,
+                user_id=self.user_id,
+                tool_name=tool_name,
+                tool_type=tool_type,
+                parameters=sanitized_params,
+                result_summary=result_summary,
+                duration_ms=duration_ms,
+                success=success,
+                error_message=error_message[:2000] if error_message else "",
+                session_id=self.session_id,
+                transport=self.transport_type,
+                mode=self.mode,
+                timestamp=datetime.now(timezone.utc),
+            )
+            self.db.add(audit_log)
+            await self.db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to log audit entry (non-fatal): {e}")
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
 
     async def _handle_list_resources(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle resources/list request."""

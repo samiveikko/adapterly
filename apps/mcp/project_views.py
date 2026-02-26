@@ -156,7 +156,7 @@ def project_create(request):
 
 @login_required
 def project_detail(request, slug):
-    """Project workspace dashboard."""
+    """Project workspace dashboard with integration health monitoring."""
     active_account, project = _get_project_for_account(request, slug)
     active_account_user = get_active_account_user(request)
 
@@ -166,6 +166,85 @@ def project_detail(request, slug):
 
     integrations = ProjectIntegration.objects.filter(project=project).select_related("system")
     profiles = AgentProfile.objects.filter(project=project).prefetch_related("api_keys")
+
+    # --- Monitoring KPIs (last 7 days) ---
+    since_7d = timezone.now() - timedelta(days=7)
+
+    # Get system aliases for this project's integrations
+    integration_aliases = list(integrations.filter(is_enabled=True).values_list("system__alias", flat=True))
+
+    # Filter audit logs by tool names that match project integrations
+    log_filters = Q(account=active_account, timestamp__gte=since_7d)
+    if integration_aliases:
+        alias_q = Q()
+        for alias in integration_aliases:
+            alias_q |= Q(tool_name__startswith=f"{alias}_")
+        log_filters &= alias_q
+
+    logs_qs = MCPAuditLog.objects.filter(log_filters)
+
+    from django.db.models import Avg
+
+    stats = logs_qs.aggregate(
+        total=Count("id"),
+        successful=Count("id", filter=Q(success=True)),
+        failed=Count("id", filter=Q(success=False)),
+        avg_duration=Avg("duration_ms"),
+    )
+
+    total_calls = stats["total"] or 0
+    failed_calls = stats["failed"] or 0
+    success_rate = round((stats["successful"] or 0) / total_calls * 100, 1) if total_calls > 0 else None
+    avg_duration = round(stats["avg_duration"] or 0)
+
+    # Per-integration health
+    integration_health = []
+    for integration in integrations.filter(is_enabled=True):
+        alias = integration.system.alias
+        int_logs = MCPAuditLog.objects.filter(
+            account=active_account,
+            tool_name__startswith=f"{alias}_",
+            timestamp__gte=since_7d,
+        )
+        int_stats = int_logs.aggregate(
+            total=Count("id"),
+            failed=Count("id", filter=Q(success=False)),
+        )
+        int_total = int_stats["total"] or 0
+        int_failed = int_stats["failed"] or 0
+        int_success_rate = round((int_total - int_failed) / int_total * 100, 1) if int_total > 0 else None
+
+        # Determine health status
+        if int_total == 0:
+            health = "no_data"
+        elif int_failed == 0:
+            health = "healthy"
+        elif int_success_rate and int_success_rate >= 90:
+            health = "warning"
+        else:
+            health = "error"
+
+        integration_health.append({
+            "integration": integration,
+            "total_calls": int_total,
+            "failed_calls": int_failed,
+            "success_rate": int_success_rate,
+            "health": health,
+        })
+
+    # Recent error diagnostics for this project's systems
+    recent_diagnostics = []
+    if integration_aliases:
+        recent_diagnostics = list(
+            ErrorDiagnostic.objects.filter(
+                account=active_account,
+                system_alias__in=integration_aliases,
+                status="pending",
+            )
+            .order_by("-last_seen_at")[:10]
+        )
+
+    # Total log count (all time)
     log_count = MCPAuditLog.objects.filter(account=active_account).count()
 
     context = {
@@ -177,6 +256,13 @@ def project_detail(request, slug):
         "integration_count": integrations.count(),
         "profile_count": profiles.count(),
         "log_count": log_count,
+        # Monitoring KPIs
+        "total_calls_7d": total_calls,
+        "failed_calls_7d": failed_calls,
+        "success_rate": success_rate,
+        "avg_duration": avg_duration,
+        "integration_health": integration_health,
+        "recent_diagnostics": recent_diagnostics,
         "active_tab": "overview",
     }
 
