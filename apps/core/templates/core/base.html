@@ -83,9 +83,26 @@
               <span class="d-none d-md-inline">{{ request.user.get_full_name|default:request.user.username }}</span>
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
+              {% if request.active_account_user %}
+              <li class="px-3 py-1">
+                <small class="text-muted">Account</small>
+                <div class="fw-semibold text-truncate" style="max-width: 200px;">{{ request.account.name }}</div>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+              {% endif %}
               <li>
                 <a class="dropdown-item" href="/account/profile/">
                   <i class="bi bi-person me-2"></i>Profile
+                </a>
+              </li>
+              <li>
+                <a class="dropdown-item" href="{% url 'switch_account' %}">
+                  <i class="bi bi-arrow-left-right me-2"></i>Switch Account
+                </a>
+              </li>
+              <li>
+                <a class="dropdown-item" href="{% url 'create_account' %}">
+                  <i class="bi bi-plus-circle me-2"></i>Create New Account
                 </a>
               </li>
               <li><hr class="dropdown-divider"></li>
