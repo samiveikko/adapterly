@@ -9,6 +9,7 @@ Tool names follow the pattern: {system}_{resource}_{action}
 Example: salesforce_contact_create, hubspot_deal_update
 """
 
+import asyncio
 import logging
 import re
 import time
@@ -972,6 +973,8 @@ async def _execute_paginated_read(
     max_pages = pagination_config.get("max_pages", 50)
     max_items = pagination_config.get("max_items", 10000)
     max_time_seconds = pagination_config.get("max_time_seconds", 120)
+    page_delay = pagination_config.get("page_delay", 0.2)  # seconds between pages
+    max_retries_429 = 3
 
     all_items = []
     current_page = start_page
@@ -988,9 +991,23 @@ async def _execute_paginated_read(
                 if time.time() - start_time > max_time_seconds:
                     break
 
+                # Rate limit: delay between pages (skip first page)
+                if current_page > start_page and page_delay > 0:
+                    await asyncio.sleep(page_delay)
+
                 page_params = {**params, page_param: current_page, size_param: min(default_size, max_size)}
 
-                response = await client.request(method=method, url=url, params=page_params, headers=headers, timeout=60)
+                # Retry loop for 429 rate limit responses
+                for retry in range(max_retries_429 + 1):
+                    response = await client.request(method=method, url=url, params=page_params, headers=headers, timeout=60)
+                    if response.status_code == 429 and retry < max_retries_429:
+                        retry_after = int(response.headers.get("Retry-After", 2 ** (retry + 1)))
+                        retry_after = min(retry_after, 60)
+                        logger.warning(f"Rate limited (429) on page {current_page}, retrying in {retry_after}s")
+                        await asyncio.sleep(retry_after)
+                        continue
+                    break
+
                 response.raise_for_status()
                 data = response.json()
                 # Extract items from response
