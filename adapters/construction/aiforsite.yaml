@@ -435,12 +435,20 @@ interfaces:
                 project:
                   type: string
                   description: Project ID
+                begin:
+                  type: string
+                  format: date-time
+                  description: Period start time (ISO 8601)
+                end:
+                  type: string
+                  format: date-time
+                  description: Period end time (ISO 8601)
+                resource_type:
+                  type: integer
+                  description: Filter by resource type ID
                 from:
                   type: integer
                   description: Pagination offset
-                to:
-                  type: integer
-                  description: Pagination end
                 limit:
                   type: integer
                   description: Max results to return
