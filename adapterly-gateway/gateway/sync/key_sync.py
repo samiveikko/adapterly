@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gateway_core.models import MCPApiKey, Project, ProjectIntegration
@@ -20,20 +20,25 @@ from ..database import get_db_context
 logger = logging.getLogger(__name__)
 
 _last_sync: datetime | None = None
+_sync_count: int = 0
+_FULL_SYNC_EVERY: int = 10  # Full sync every N cycles to catch deletions
 
 
 async def sync_keys_once():
     """Pull keys, projects, and integrations from control plane."""
-    global _last_sync
+    global _last_sync, _sync_count
     settings = get_settings()
 
     if not settings.gateway_secret:
         logger.warning("No gateway secret configured, skipping key sync")
         return
 
+    # Every N syncs, do a full sync (no since) to catch deletions
+    is_full_sync = _last_sync is None or (_sync_count % _FULL_SYNC_EVERY == 0)
+
     url = f"{settings.control_plane_url.rstrip('/')}/gateway-sync/v1/keys"
     params = {}
-    if _last_sync:
+    if _last_sync and not is_full_sync:
         params["since"] = _last_sync.isoformat()
 
     headers = {"Authorization": f"Bearer {settings.gateway_secret}"}
@@ -53,6 +58,11 @@ async def sync_keys_once():
             for key_data in data.get("keys", []):
                 await _upsert_api_key(db, key_data)
 
+            # Deactivate keys not present in CP response (full sync only)
+            if is_full_sync:
+                active_ids = {k["id"] for k in data.get("keys", [])}
+                await _deactivate_missing_keys(db, active_ids)
+
             # Upsert integrations
             for integ_data in data.get("integrations", []):
                 await _upsert_integration(db, integ_data)
@@ -60,6 +70,7 @@ async def sync_keys_once():
             await db.commit()
 
         _last_sync = datetime.now(timezone.utc)
+        _sync_count += 1
         logger.info(
             f"Key sync complete: {len(data.get('keys', []))} keys, "
             f"{len(data.get('projects', []))} projects, "
@@ -142,6 +153,22 @@ async def _upsert_integration(db: AsyncSession, data: dict):
             custom_config=data.get("custom_config", {}),
         )
         db.add(integ)
+
+
+async def _deactivate_missing_keys(db: AsyncSession, active_ids: set[int]):
+    """Deactivate local keys that are no longer in the control plane."""
+    result = await db.execute(
+        select(MCPApiKey.id).where(MCPApiKey.is_active == True)  # noqa: E712
+    )
+    local_ids = {row[0] for row in result.all()}
+    stale_ids = local_ids - active_ids
+    if stale_ids:
+        await db.execute(
+            update(MCPApiKey)
+            .where(MCPApiKey.id.in_(stale_ids))
+            .values(is_active=False)
+        )
+        logger.info(f"Deactivated {len(stale_ids)} keys not in control plane: {stale_ids}")
 
 
 async def key_sync_loop():
