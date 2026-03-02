@@ -8,6 +8,21 @@ from functools import lru_cache
 from pydantic_settings import BaseSettings
 
 
+def _env_files() -> list[str]:
+    """Return list of .env files to load (later files override earlier ones)."""
+    files = [".env"]
+    data_dir = os.environ.get("GATEWAY_DATA_DIR")
+    if data_dir:
+        files.append(os.path.join(data_dir, ".env"))
+    db_path = os.environ.get("GATEWAY_DB_PATH")
+    if db_path:
+        db_dir = os.path.dirname(os.path.abspath(db_path))
+        candidate = os.path.join(db_dir, ".env")
+        if candidate not in files:
+            files.append(candidate)
+    return files
+
+
 class GatewaySettings(BaseSettings):
     """Standalone gateway settings."""
 
@@ -58,7 +73,7 @@ class GatewaySettings(BaseSettings):
         return bool(self.gateway_id)
 
     class Config:
-        env_file = ".env"
+        env_file = _env_files()
         env_file_encoding = "utf-8"
         env_prefix = "GATEWAY_"
         extra = "ignore"
