@@ -1,8 +1,12 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "adapterly-gateway"
 version = "0.1.0"
 description = "Standalone MCP gateway with local credential storage"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.100.0",
     "uvicorn[standard]>=0.22.0",
