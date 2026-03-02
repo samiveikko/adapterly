@@ -2,16 +2,26 @@
 Gateway CLI — registration and management commands.
 
 Usage:
-    python -m gateway.cli register --token=<one-time-token> --url=<control-plane-url>
-    python -m gateway.cli status
+    adapterly-gateway run [--host] [--port] [--reload]
+    adapterly-gateway register --token=<one-time-token> --url=<control-plane-url>
+    adapterly-gateway status
 """
 
 import argparse
-import json
 import os
 import sys
 
 import httpx
+
+
+def _get_env_path() -> str:
+    """Get .env path — use data dir in container, or project root otherwise."""
+    # In container: /app/data/.env (persistent volume)
+    data_dir = os.environ.get("GATEWAY_DATA_DIR")
+    if data_dir and os.path.isdir(data_dir):
+        return os.path.join(data_dir, ".env")
+    # Fallback: next to the gateway package
+    return os.path.join(os.path.dirname(__file__), "..", ".env")
 
 
 def register(args):
@@ -38,7 +48,7 @@ def register(args):
         print(f"\nIMPORTANT: Store the secret securely. It cannot be retrieved again.")
 
         # Write to .env file
-        env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+        env_path = _get_env_path()
         env_lines = []
         if os.path.exists(env_path):
             with open(env_path) as f:
@@ -87,6 +97,23 @@ def register(args):
         sys.exit(1)
 
 
+def run(args):
+    """Start the gateway server."""
+    import uvicorn
+
+    host = args.host or os.environ.get("GATEWAY_HOST", "0.0.0.0")
+    port = args.port or int(os.environ.get("GATEWAY_PORT", "8080"))
+    reload = args.reload
+
+    print(f"Starting Adapterly Gateway on {host}:{port}")
+    uvicorn.run(
+        "gateway.main:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
+
+
 def status(args):
     """Show gateway status."""
     print("Gateway Configuration:")
@@ -94,7 +121,7 @@ def status(args):
     print(f"  CONTROL_PLANE_URL: {os.environ.get('GATEWAY_CONTROL_PLANE_URL', '(not set)')}")
     print(f"  SECRET: {'***configured***' if os.environ.get('GATEWAY_GATEWAY_SECRET') else '(not set)'}")
 
-    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    env_path = _get_env_path()
     if os.path.exists(env_path):
         print(f"\n  .env file: {os.path.abspath(env_path)}")
     else:
@@ -104,6 +131,12 @@ def status(args):
 def main():
     parser = argparse.ArgumentParser(description="Adapterly Gateway CLI")
     subparsers = parser.add_subparsers(dest="command")
+
+    # run
+    run_parser = subparsers.add_parser("run", help="Start the gateway server")
+    run_parser.add_argument("--host", default=None, help="Bind host (default: 0.0.0.0)")
+    run_parser.add_argument("--port", type=int, default=None, help="Bind port (default: 8080)")
+    run_parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
 
     # register
     reg = subparsers.add_parser("register", help="Register this gateway with a control plane")
@@ -116,7 +149,9 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == "register":
+    if args.command == "run":
+        run(args)
+    elif args.command == "register":
         register(args)
     elif args.command == "status":
         status(args)

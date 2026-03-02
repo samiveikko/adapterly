@@ -2,20 +2,16 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy everything (gateway_core must be copied by build_prepare.sh first)
+COPY . /app/
 
-# Copy gateway_core (shared library)
-COPY ../gateway_core /app/gateway_core
-
-# Copy gateway code
-COPY gateway/ /app/gateway/
+# Install as package
+RUN pip install --no-cache-dir .
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8001/health').raise_for_status()"
+    CMD python -c "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()"
 
-EXPOSE 8001
+EXPOSE 8080
 
-CMD ["uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["adapterly-gateway", "run"]

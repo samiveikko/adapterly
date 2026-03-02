@@ -5,23 +5,25 @@ Provides a simple web interface for managing credentials.
 Access restricted by admin password.
 """
 
-import hashlib
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
+from html import escape
 from typing import Any
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from gateway_core.crypto import encrypt_value
-from gateway_core.models import AccountSystem, System
+from gateway_core.executor import _get_auth_headers
+from gateway_core.models import AccountSystem, Interface, MCPApiKey, System
 
 from ..config import get_settings
 from ..database import get_db
+from .credential_schema import get_credential_fields
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -120,6 +122,8 @@ async def edit_credential(request: Request, system_id: int, db: AsyncSession = D
     if not system:
         raise HTTPException(status_code=404, detail="System not found")
 
+    fields = await get_credential_fields(system, db)
+
     stmt = (
         select(AccountSystem)
         .where(AccountSystem.system_id == system_id)
@@ -128,7 +132,7 @@ async def edit_credential(request: Request, system_id: int, db: AsyncSession = D
     result = await db.execute(stmt)
     cred = result.scalar_one_or_none()
 
-    return HTMLResponse(_render_credential_form(system, cred))
+    return HTMLResponse(_render_credential_form(system, fields, cred))
 
 
 @router.post("/credentials/{system_id}")
@@ -136,12 +140,6 @@ async def save_credential(
     request: Request,
     system_id: int,
     db: AsyncSession = Depends(get_db),
-    username: str = Form(""),
-    password: str = Form(""),
-    api_key: str = Form(""),
-    token: str = Form(""),
-    client_id: str = Form(""),
-    client_secret: str = Form(""),
 ):
     _check_admin_auth(request)
 
@@ -149,10 +147,9 @@ async def save_credential(
     if not system:
         raise HTTPException(status_code=404, detail="System not found")
 
-    stmt = (
-        select(AccountSystem)
-        .where(AccountSystem.system_id == system_id)
-    )
+    form_data = await request.form()
+
+    stmt = select(AccountSystem).where(AccountSystem.system_id == system_id)
     result = await db.execute(stmt)
     cred = result.scalar_one_or_none()
 
@@ -164,19 +161,17 @@ async def save_credential(
         )
         db.add(cred)
 
-    # Only update fields that were provided (non-empty)
-    if username:
-        cred.username = username
-    if password:
-        cred.password = encrypt_value(password)
-    if api_key:
-        cred.api_key = encrypt_value(api_key)
-    if token:
-        cred.token = encrypt_value(token)
-    if client_id:
-        cred.client_id = client_id
-    if client_secret:
-        cred.client_secret = encrypt_value(client_secret)
+    # Map form fields to AccountSystem columns
+    sensitive_columns = {"password", "api_key", "token", "client_secret"}
+    valid_columns = {"username", "password", "api_key", "token", "client_id", "client_secret"}
+
+    for field_name in valid_columns:
+        value = form_data.get(field_name, "")
+        if value:
+            if field_name in sensitive_columns:
+                setattr(cred, field_name, encrypt_value(value))
+            else:
+                setattr(cred, field_name, value)
 
     cred.updated_at = datetime.utcnow()
     await db.commit()
@@ -199,6 +194,79 @@ async def delete_credential(request: Request, system_id: int, db: AsyncSession =
         logger.info(f"Credentials deleted for system_id {system_id}")
 
     return RedirectResponse(url="/admin/", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Test connection
+# ---------------------------------------------------------------------------
+
+
+@router.post("/credentials/{system_id}/test")
+async def test_credential(request: Request, system_id: int, db: AsyncSession = Depends(get_db)):
+    """Test connection for a system's credentials."""
+    _check_admin_auth(request)
+
+    system = await db.get(System, system_id)
+    if not system:
+        return JSONResponse({"success": False, "message": "System not found"}, status_code=404)
+
+    stmt = (
+        select(AccountSystem)
+        .options(selectinload(AccountSystem.system))
+        .where(AccountSystem.system_id == system_id)
+        .where(AccountSystem.is_enabled == True)  # noqa: E712
+    )
+    result = await db.execute(stmt)
+    account_system = result.scalar_one_or_none()
+
+    if not account_system:
+        return JSONResponse({"success": False, "message": "No credentials configured"})
+
+    iface_stmt = select(Interface).where(Interface.system_id == system_id).limit(1)
+    iface_result = await db.execute(iface_stmt)
+    interface = iface_result.scalar_one_or_none()
+
+    if not interface:
+        return JSONResponse({"success": False, "message": "No interface found"})
+
+    try:
+        auth_headers = await _get_auth_headers(account_system, interface, db)
+        if not auth_headers:
+            account_system.last_error = "Authentication failed — no headers returned"
+            await db.commit()
+            return JSONResponse({"success": False, "message": "Authentication failed. Check credentials."})
+
+        account_system.is_verified = True
+        account_system.last_verified_at = datetime.now(timezone.utc)
+        account_system.last_error = None
+        await db.commit()
+
+        return JSONResponse({"success": True, "message": f"Connected to {system.display_name} successfully."})
+
+    except Exception as e:
+        account_system.last_error = str(e)
+        await db.commit()
+        return JSONResponse({"success": False, "message": f"Connection failed: {e}"})
+
+
+# ---------------------------------------------------------------------------
+# Agent config
+# ---------------------------------------------------------------------------
+
+
+@router.get("/agent-config", response_class=HTMLResponse)
+async def agent_config(request: Request, db: AsyncSession = Depends(get_db)):
+    _check_admin_auth(request)
+
+    settings = get_settings()
+    host = request.headers.get("host", f"localhost:{settings.port}")
+    scheme = request.url.scheme
+
+    stmt = select(MCPApiKey).where(MCPApiKey.is_active == True).limit(1)  # noqa: E712
+    result = await db.execute(stmt)
+    api_key = result.scalar_one_or_none()
+
+    return HTMLResponse(_render_agent_config(host, scheme, api_key))
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +313,7 @@ def _base_html(title: str, content: str) -> str:
 <body>
     <div class="nav">
         <a href="/admin/">Dashboard</a>
+        <a href="/admin/agent-config">Agent Config</a>
         <form action="/admin/logout" method="post" class="inline" style="float:right">
             <button type="submit" class="btn btn-sm" style="background:transparent;color:#ccc;border:1px solid #555">Logout</button>
         </form>
@@ -275,7 +344,9 @@ def _render_dashboard(systems: list, cred_map: dict) -> str:
     rows = ""
     for system in systems:
         cred = cred_map.get(system.id)
-        if cred:
+        if cred and cred.is_verified:
+            status_html = '<span class="status status-ok">Verified</span>'
+        elif cred:
             status_html = '<span class="status status-ok">Configured</span>'
         else:
             status_html = '<span class="status status-none">No credentials</span>'
@@ -284,7 +355,7 @@ def _render_dashboard(systems: list, cred_map: dict) -> str:
         <div class="card">
             <div class="flex">
                 <div>
-                    <strong>{system.display_name}</strong> ({system.alias})
+                    <strong>{escape(system.display_name)}</strong> ({escape(system.alias)})
                     <br>{status_html}
                 </div>
                 <a href="/admin/credentials/{system.id}" class="btn btn-primary btn-sm">Configure</a>
@@ -301,15 +372,28 @@ def _render_dashboard(systems: list, cred_map: dict) -> str:
     """)
 
 
-def _render_credential_form(system: Any, cred: AccountSystem | None) -> str:
-    username = cred.username or "" if cred else ""
-    pw_placeholder = "***configured***" if cred and cred.password else "Enter password"
-    ak_placeholder = "***configured***" if cred and cred.api_key else "Enter API key"
-    tok_placeholder = "***configured***" if cred and cred.token else "Enter token"
-    cs_placeholder = "***configured***" if cred and cred.client_secret else "Enter client secret"
-    client_id_val = cred.client_id or "" if cred else ""
-    confirm_js = "return confirm('Delete credentials?')"
+def _render_credential_form(system: Any, fields: list, cred: AccountSystem | None) -> str:
+    fields_html = ""
+    for field in fields:
+        existing_val = ""
+        placeholder = ""
+        if cred:
+            raw = getattr(cred, field.name, None)
+            if field.sensitive and raw:
+                placeholder = "***configured*** (leave empty to keep)"
+            elif raw:
+                existing_val = escape(str(raw))
 
+        input_type = field.input_type
+        opt_label = '' if field.required else ' <span style="color:#888;font-weight:400;font-size:12px">(optional)</span>'
+
+        fields_html += f"""
+                <label>{escape(field.label)}{opt_label}</label>
+                <input type="{input_type}" name="{escape(field.name)}"
+                       value="{existing_val}" placeholder="{placeholder}">
+        """
+
+    confirm_js = "return confirm('Delete credentials?')"
     delete_html = ""
     if cred:
         delete_html = (
@@ -320,36 +404,124 @@ def _render_credential_form(system: Any, cred: AccountSystem | None) -> str:
             + '">Delete Credentials</button></form></div>'
         )
 
-    return _base_html(f"Configure {system.display_name}", f"""
-        <h1>Configure: {system.display_name}</h1>
-        <p style="margin-bottom:20px;color:#666">System: {system.alias} | Type: {system.system_type}</p>
+    test_btn = ""
+    if cred:
+        test_btn = f"""
+            <button type="button" class="btn" style="background:#17a2b8;color:white"
+                    onclick="testConnection({system.id}, this)">Test Connection</button>
+            <span id="test-result-{system.id}" style="margin-left:8px;font-size:13px"></span>
+        """
+
+    return _base_html(f"Configure {escape(system.display_name)}", f"""
+        <h1>Configure: {escape(system.display_name)}</h1>
+        <p style="margin-bottom:20px;color:#666">System: {escape(system.alias)} | Type: {escape(system.system_type)}</p>
 
         <div class="card">
             <form method="post" action="/admin/credentials/{system.id}">
-                <label>Username</label>
-                <input type="text" name="username" value="{username}" placeholder="Leave empty to keep current">
-
-                <label>Password</label>
-                <input type="password" name="password" placeholder="{pw_placeholder}">
-
-                <label>API Key</label>
-                <input type="password" name="api_key" placeholder="{ak_placeholder}">
-
-                <label>Token</label>
-                <input type="password" name="token" placeholder="{tok_placeholder}">
-
-                <label>Client ID (OAuth)</label>
-                <input type="text" name="client_id" value="{client_id_val}" placeholder="OAuth client ID">
-
-                <label>Client Secret (OAuth)</label>
-                <input type="password" name="client_secret" placeholder="{cs_placeholder}">
-
-                <div style="margin-top:16px">
+                {fields_html}
+                <div style="margin-top:16px;display:flex;gap:8px;align-items:center">
                     <button type="submit" class="btn btn-primary">Save Credentials</button>
+                    {test_btn}
                     <a href="/admin/" class="btn" style="color:#666">Cancel</a>
                 </div>
             </form>
         </div>
 
         {delete_html}
+
+        <script>
+        function testConnection(systemId, btn) {{
+            btn.disabled = true;
+            btn.textContent = 'Testing...';
+            var resultEl = document.getElementById('test-result-' + systemId);
+            resultEl.textContent = '';
+            fetch('/admin/credentials/' + systemId + '/test', {{method: 'POST'}})
+                .then(r => r.json())
+                .then(data => {{
+                    resultEl.textContent = data.message;
+                    resultEl.style.color = data.success ? '#28a745' : '#e63946';
+                    btn.disabled = false;
+                    btn.textContent = 'Test Connection';
+                }})
+                .catch(e => {{
+                    resultEl.textContent = 'Request failed';
+                    resultEl.style.color = '#e63946';
+                    btn.disabled = false;
+                    btn.textContent = 'Test Connection';
+                }});
+        }}
+        </script>
+    """)
+
+
+def _render_agent_config(host: str, scheme: str, api_key) -> str:
+    base_url = f"{scheme}://{host}"
+    mcp_url = f"{base_url}/mcp"
+
+    key_display = f"{api_key.key_prefix}..." if api_key else "(no API key synced yet)"
+
+    key_note = ""
+    if not api_key:
+        key_note = '<p style="color:#e63946;margin-bottom:16px">No API key found. Create one in the Adapterly dashboard and wait for sync.</p>'
+
+    claude_config = (
+        '{\n'
+        '  "adapterly": {\n'
+        f'    "url": "{mcp_url}",\n'
+        '    "headers": {\n'
+        f'      "Authorization": "Bearer {key_display}"\n'
+        '    }\n'
+        '  }\n'
+        '}'
+    )
+
+    cursor_config = (
+        '{\n'
+        '  "mcpServers": {\n'
+        '    "adapterly": {\n'
+        f'      "url": "{mcp_url}",\n'
+        '      "headers": {{\n'
+        f'        "Authorization": "Bearer {key_display}"\n'
+        '      }}\n'
+        '    }\n'
+        '  }\n'
+        '}'
+    )
+
+    return _base_html("Agent Config", f"""
+        <h1>Agent Configuration</h1>
+        <p style="margin-bottom:20px;color:#666">
+            Use these settings to connect your AI agent to this gateway.
+        </p>
+
+        {key_note}
+
+        <div class="card">
+            <label>MCP Endpoint</label>
+            <pre id="endpoint" style="background:#1e1e2e;color:#cdd6f4;padding:12px;border-radius:4px;cursor:pointer"
+                 onclick="copyText('endpoint')">{escape(mcp_url)}</pre>
+            <label style="margin-top:12px">API Key Prefix</label>
+            <pre id="apikey" style="background:#1e1e2e;color:#cdd6f4;padding:12px;border-radius:4px;cursor:pointer"
+                 onclick="copyText('apikey')">{escape(key_display)}</pre>
+        </div>
+
+        <div class="card">
+            <h2>Claude Code / Claude Desktop</h2>
+            <p style="color:#888;font-size:13px;margin-bottom:8px">Add to <code>mcp_servers</code> in settings:</p>
+            <pre id="claude-cfg" style="background:#1e1e2e;color:#cdd6f4;padding:12px;border-radius:4px;cursor:pointer;overflow-x:auto"
+                 onclick="copyText('claude-cfg')">{escape(claude_config)}</pre>
+        </div>
+
+        <div class="card">
+            <h2>Cursor</h2>
+            <p style="color:#888;font-size:13px;margin-bottom:8px">Add to <code>.cursor/mcp.json</code>:</p>
+            <pre id="cursor-cfg" style="background:#1e1e2e;color:#cdd6f4;padding:12px;border-radius:4px;cursor:pointer;overflow-x:auto"
+                 onclick="copyText('cursor-cfg')">{escape(cursor_config)}</pre>
+        </div>
+
+        <script>
+        function copyText(id) {{
+            navigator.clipboard.writeText(document.getElementById(id).textContent.trim());
+        }}
+        </script>
     """)

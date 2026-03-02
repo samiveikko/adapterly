@@ -2,23 +2,20 @@
 Adapterly Gateway — standalone MCP gateway.
 
 Run with:
-    uvicorn gateway.main:app --host 0.0.0.0 --port 8001
+    adapterly-gateway run
     # or
-    python -m gateway.main
+    uvicorn gateway.main:app --host 0.0.0.0 --port 8080
 """
 
 import asyncio
 import logging
 import os
-import sys
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
-# Add parent directory to path so gateway_core is importable
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-
-from gateway_core.config import DeploymentMode
 from gateway_core.crypto import configure_secret_key
 
 from .config import get_settings
@@ -56,8 +53,31 @@ if settings.cors_origins:
         allow_headers=["Authorization", "Content-Type", "Accept", "Mcp-Session-Id"],
     )
 
-# Include admin routes
+
+# ---------------------------------------------------------------------------
+# Setup wizard middleware — redirect to /setup/ if not registered
+# ---------------------------------------------------------------------------
+
+_SETUP_BYPASS = ("/setup", "/health", "/docs", "/openapi.json")
+
+
+class SetupRedirectMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        # Use get_settings() each time so reloaded config is picked up after wizard registration
+        current = get_settings()
+        if not current.is_registered and not any(path.startswith(p) for p in _SETUP_BYPASS):
+            return RedirectResponse(url="/setup/", status_code=307)
+        return await call_next(request)
+
+
+app.add_middleware(SetupRedirectMiddleware)
+
+# Include routers
 from .admin.routes import router as admin_router
+from .setup.routes import router as setup_router
+
+app.include_router(setup_router)
 app.include_router(admin_router)
 
 
@@ -83,9 +103,9 @@ async def startup():
         asyncio.create_task(health_push_loop())
         logger.info("Background sync tasks started")
     else:
-        logger.warning(
-            "No GATEWAY_GATEWAY_SECRET configured. "
-            "Run 'adapterly-gateway register' to connect to a control plane."
+        logger.info(
+            "Gateway not registered. Open http://localhost:%d/setup/ to get started.",
+            settings.port,
         )
 
 
@@ -187,15 +207,3 @@ async def call_tool(
     return result
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "gateway.main:app",
-        host=settings.host,
-        port=settings.port,
-        reload=settings.debug,
-    )

@@ -39,7 +39,7 @@ class GatewaySettings(BaseSettings):
 
     # Server
     host: str = "0.0.0.0"
-    port: int = 8001
+    port: int = 8080
     debug: bool = False
 
     # CORS
@@ -53,6 +53,10 @@ class GatewaySettings(BaseSettings):
     def sync_database_url(self) -> str:
         return f"sqlite:///{self.db_path}"
 
+    @property
+    def is_registered(self) -> bool:
+        return bool(self.gateway_id)
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -63,3 +67,9 @@ class GatewaySettings(BaseSettings):
 @lru_cache
 def get_settings() -> GatewaySettings:
     return GatewaySettings()
+
+
+def reload_settings() -> GatewaySettings:
+    """Reload settings from .env (clears lru_cache). Used by setup wizard."""
+    get_settings.cache_clear()
+    return get_settings()
