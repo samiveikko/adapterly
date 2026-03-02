@@ -109,14 +109,21 @@ async def startup():
         )
 
 
+@app.get("/")
+async def root():
+    """Redirect root to admin dashboard (or setup if not registered)."""
+    return RedirectResponse(url="/admin/", status_code=307)
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
+    current = get_settings()
     return {
         "status": "healthy",
         "service": "adapterly-gateway",
         "version": "0.1.0",
-        "gateway_id": settings.gateway_id or "not-registered",
+        "gateway_id": current.gateway_id or "not-registered",
         "mode": "gateway",
     }
 
