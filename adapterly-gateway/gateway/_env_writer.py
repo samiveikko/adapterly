@@ -6,11 +6,19 @@ import os
 
 
 def _get_env_path() -> str:
-    """Get .env path — use data dir in container, or project root otherwise."""
+    """Get .env path — data dir (container) > db dir > cwd."""
+    # Container: persistent volume
     data_dir = os.environ.get("GATEWAY_DATA_DIR")
     if data_dir and os.path.isdir(data_dir):
         return os.path.join(data_dir, ".env")
-    return os.path.join(os.path.dirname(__file__), "..", ".env")
+    # Next to the DB file (if GATEWAY_DB_PATH is set and directory exists)
+    db_path = os.environ.get("GATEWAY_DB_PATH")
+    if db_path:
+        db_dir = os.path.dirname(os.path.abspath(db_path))
+        if os.path.isdir(db_dir):
+            return os.path.join(db_dir, ".env")
+    # Fallback: current working directory
+    return os.path.join(os.getcwd(), ".env")
 
 
 def write_env_values(values: dict[str, str]) -> str:
