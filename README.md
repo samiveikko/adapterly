@@ -6,7 +6,7 @@
 [![Django 5.2](https://img.shields.io/badge/django-5.2-green.svg)](https://www.djangoproject.com/)
 [![MCP](https://img.shields.io/badge/MCP-compatible-purple.svg)](https://modelcontextprotocol.io/)
 
-AI-powered integration platform for fragmented industries. Connect 67 pre-built adapters for construction, logistics, and general business tools, and let AI agents query everything through MCP.
+AI-powered MCP gateway for fragmented industries. Connect 70 pre-built adapters for construction, logistics, ERP, and general business tools, and let AI agents query everything through MCP.
 
 ## Features
 
@@ -14,40 +14,53 @@ AI-powered integration platform for fragmented industries. Connect 67 pre-built 
 
 | Industry | Systems | Examples |
 |----------|---------|----------|
-| **Construction** | 47 systems | Procore, Infrakit, Congrid, Tekla, Dalux, Solibri |
-| **Logistics** | 13 systems | DHL, Posti, Bring, nShift, Unifaun, DB Schenker |
-| **General** | 7 systems | Slack, Teams, SharePoint, Google Drive, DocuSign |
+| **Construction** | 31 systems | Procore, Infrakit, Congrid, Tekla, Dalux, Solibri |
+| **Logistics** | 12 systems | DHL, Posti, Bring, nShift, Unifaun, DB Schenker |
+| **ERP** | 13 systems | SAP, Dynamics 365, Visma, Admicom, Fortnox, Lemonsoft |
+| **General** | 14 systems | Slack, Teams, SharePoint, Google Drive, Salesforce, DocuSign |
 
 ### Core Capabilities
 
-- **Pre-built Adapters** - 67 systems ready to connect (Infrakit, Congrid, Procore, Unifaun, Posti, etc.)
+- **Pre-built Adapters** - 70 systems ready to connect (Infrakit, Congrid, Procore, Unifaun, Posti, etc.)
 - **MCP Gateway** - Native Model Context Protocol support for Claude, ChatGPT, Cursor, and other AI agents
 - **Confirmation Status** - Adapters start "unconfirmed" until first successful API call proves they work
-- **Multiple Auth Methods** - OAuth2, API keys, Basic auth, browser session (XHR)
+- **Multiple Auth Methods** - OAuth2, API keys, Basic auth, Bearer token, DRF token, browser session (XHR)
 - **GraphQL Support** - Native handling for GraphQL APIs alongside REST
 - **Project Scoping** - Isolate integrations and credentials per project
+- **Gateway Deployment** - Optional standalone gateway for on-premise or edge deployments
 
 ## Architecture
 
 ```
 AI Agents (Claude, ChatGPT, etc.)
-       ↓ (MCP protocol)
+       | (MCP protocol)
+       v
 ┌──────────────────────────────────────┐
 │  Adapterly MCP Gateway               │
+│  ├── Streamable HTTP (JSON-RPC 2.0)  │
 │  ├── System Tools (auto-generated)   │
 │  ├── Project Scoping                 │
 │  └── Audit Logging                   │
 └──────────────────────────────────────┘
-       ↓
+       |
+       v
 ┌──────────────────────────────────────┐
 │  Adapter Layer                       │
 │  ├── REST APIs                       │
 │  ├── GraphQL APIs                    │
 │  └── Browser Session (XHR)           │
 └──────────────────────────────────────┘
-       ↓
+       |
+       v
 External Systems (Infrakit, Unifaun, etc.)
 ```
+
+### Deployment Modes
+
+| Mode | Description |
+|------|-------------|
+| **Monolith** (default) | Django + FastAPI + PostgreSQL on single server |
+| **Control Plane + Gateway** | Django control plane at adapterly.ai + standalone FastAPI gateways |
 
 ## System Confirmation Status
 
@@ -64,7 +77,7 @@ Confirmation happens automatically when you connect a system and make your first
 
 ### System Tools (Auto-generated)
 
-Tools are generated automatically from adapter definitions:
+Tools are generated automatically from YAML adapter definitions:
 
 ```
 {system}_{resource}_{action}
@@ -84,14 +97,18 @@ Examples:
 
 ## Quick Start
 
-### 1. Configure Claude Desktop
+### 1. Connect to MCP Gateway
+
+Use Streamable HTTP with your API key (`ak_live_xxx`):
 
 ```json
 {
   "mcpServers": {
     "adapterly": {
-      "url": "https://api.adapterly.ai/mcp",
-      "apiKey": "your-api-key"
+      "url": "https://adapterly.ai/mcp/v1/",
+      "headers": {
+        "Authorization": "Bearer ak_live_xxx"
+      }
     }
   }
 }
@@ -100,7 +117,7 @@ Examples:
 ### 2. Connect Systems
 
 1. Go to Systems dashboard
-2. Choose from 67 pre-built adapters
+2. Choose from 70 pre-built adapters
 3. Configure OAuth or API key credentials
 4. System becomes "confirmed" after first successful call
 
@@ -115,7 +132,7 @@ AI: Using Congrid adapter...
 
 ## Industry Systems
 
-### Construction (47 systems)
+### Construction (31 systems)
 
 | System | Type | Country |
 |--------|------|---------|
@@ -127,14 +144,12 @@ AI: Using Congrid adapter...
 | Solibri | BIM Checking | FI |
 | Dalux | Quality Management | DK |
 | Sitedrive | Scheduling | FI |
-| Admicom Ultima | ERP | FI |
 | Trimble Connect | BIM | US |
 | Oracle Primavera P6 | Scheduling | US |
 | Bentley Synchro | 4D Scheduling | US |
-| SAP | ERP | DE |
-| ... and 34 more | | |
+| ... and 20 more | | |
 
-### Logistics (13 systems)
+### Logistics (12 systems)
 
 | System | Type | Country |
 |--------|------|---------|
@@ -148,11 +163,26 @@ AI: Using Congrid adapter...
 | Matkahuolto | Carrier | FI |
 | Cargoson | Shipping | EE |
 | Consignor | Shipping | NO |
-| Ongoing WMS | Warehouse | SE |
 | Kuehne + Nagel | Freight | CH |
 | Transporeon | Freight Platform | DE |
 
-### General / Cross-Industry (7 systems)
+### ERP (13 systems)
+
+| System | Type | Country |
+|--------|------|---------|
+| SAP | ERP | DE |
+| Dynamics 365 | ERP | US |
+| Visma | ERP | NO |
+| Admicom | ERP | FI |
+| Fortnox | ERP | SE |
+| Lemonsoft | ERP | FI |
+| Tripletex | ERP | NO |
+| Monitor | ERP | SE |
+| Unit4 | ERP | NO |
+| IFS | ERP | SE |
+| ... and 3 more | | |
+
+### General / Cross-Industry (14 systems)
 
 | System | Type | Country |
 |--------|------|---------|
@@ -163,6 +193,9 @@ AI: Using Congrid adapter...
 | Google Sheets | Storage | US |
 | Microsoft Power BI | Analytics | US |
 | DocuSign | e-Signatures | US |
+| Salesforce | CRM | US |
+| SokoPro | Document Management | FI |
+| ... and 5 more | | |
 
 ## Development
 
@@ -178,8 +211,19 @@ AI: Using Congrid adapter...
 ```bash
 pip install -r requirements.txt
 python manage.py migrate
+python manage.py load_adapters   # Load YAML adapter definitions
 python manage.py runserver
 ```
+
+### Deployment Modes
+
+Set `DEPLOYMENT_MODE` environment variable:
+
+| Value | Description |
+|-------|-------------|
+| `monolith` (default) | All-in-one: Django + FastAPI + PostgreSQL |
+| `control_plane` | Django control plane with Gateway Sync API |
+| `gateway` | Standalone FastAPI gateway (syncs from control plane) |
 
 ### Run FastAPI MCP Server
 
@@ -190,28 +234,17 @@ uvicorn fastapi_app.main:app --reload
 ### Management Commands
 
 ```bash
-# Check all adapters for OpenAPI spec changes (used as daily cron)
-python manage.py check_adapter_updates
-
-# Skip email notification (useful for manual/debug runs)
-python manage.py check_adapter_updates --no-notify
+# Load adapter definitions from YAML files
+python manage.py load_adapters
 
 # Send a test email to verify SMTP configuration
 python manage.py test_email admin@example.com
 ```
 
-To receive email notifications when spec changes are detected, set the env var:
-
-```bash
-ADAPTER_UPDATE_NOTIFY_EMAILS=["admin@adapterly.ai"]
-```
-
-Changed adapters can be reviewed at `/admin/systems/pending-refreshes/`.
-
 ### Add New Adapter
 
-1. Create YAML adapter definition or migration with System, Interface, Resources, Actions
-2. Run migration or `load_adapters`
+1. Create YAML adapter definition in `adapters/<industry>/<system>.yaml`
+2. Run `python manage.py load_adapters`
 3. Connect with credentials
 4. First successful call confirms the adapter
 

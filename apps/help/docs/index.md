@@ -1,49 +1,51 @@
 # Adapterly Documentation
 
-Welcome to Adapterly - the AI-powered integration platform that connects your systems and automates business processes.
+Welcome to Adapterly - the MCP gateway that connects AI agents to your business systems.
 
 > **New to Adapterly?** Start with the [Getting Started Tutorial](/help/en/tutorial/) for a complete introduction.
 
 ## Who is Adapterly for?
 
-- **Business analysts** - Automate data flows without coding
-- **Developers** - Connect APIs quickly and reliably
-- **Teams** - Manage data across platforms centrally
+- **Teams using AI agents** - Give Claude, ChatGPT, or Cursor access to your business systems
+- **System integrators** - Connect APIs and expose them as MCP tools
+- **Enterprises** - Centralize system access with audit logging and project scoping
 
-## 5-Minute Quick Start
+## Quick Start
 
-1. **Add a system** → Connect your first API (e.g., with OpenAPI spec)
-2. **Configure resources** → Set up endpoints and actions
-3. **Test** → Verify connections and check results
-4. **Integrate** → Use via MCP, API, or schedule automations
+1. **Choose adapters** - Select from 70 pre-built system adapters
+2. **Configure credentials** - Set up OAuth, API keys, or other auth for each system
+3. **Create a project** - Scope which systems and tools are available
+4. **Generate API key** - Get an `ak_live_xxx` key for MCP access
+5. **Connect AI agent** - Point Claude or any MCP client to the gateway
 
 ## Concepts at a Glance
 
 | Concept | Description |
 |---------|-------------|
-| **System** | External service (Infrakit, Google Sheets, your API) |
-| **Interface** | System's API endpoint (REST, XHR) |
+| **System** | External service (Infrakit, Google Sheets, Salesforce) |
+| **Interface** | System's API endpoint (REST, GraphQL, XHR) |
 | **Resource** | Data entity (projects, users, orders) |
 | **Action** | Operation on resource (list, get, create, update) |
-| **Secret** | Securely stored credential (`${env:API_KEY}`) |
-| **MCP Tool** | Function used by Claude AI |
+| **Project** | Scoped workspace with selected system integrations |
+| **API Key** | MCP authentication key (`ak_live_xxx` / `ak_test_xxx`) |
+| **MCP Tool** | Auto-generated function for AI agents |
 
 ## Documentation Structure
 
 ### [Core Concepts](/help/en/concepts/)
-Deep dive into systems, integrations, and other core concepts.
+Deep dive into systems, projects, permissions, and gateway architecture.
 
 ### [Guides](/help/en/guides/)
-Step-by-step instructions for common tasks: adding systems, authentication, testing, publishing.
+Step-by-step instructions for adding adapters, configuring credentials, and deploying gateways.
 
 ### [Recipes](/help/en/recipes/)
-Ready-to-use copy-paste examples for common use cases.
+MCP usage examples and AI conversation patterns.
 
 ### [MCP & Agents](/help/en/mcp/)
-Claude AI integration, security, and agent usage.
+MCP protocol details, connection setup, and agent configuration.
 
-### [YAML Reference](/help/en/reference/)
-Official schema, step types, template language, and API documentation.
+### [Reference](/help/en/reference/)
+YAML adapter schema, MCP JSON-RPC protocol, and API endpoints.
 
 ### [Troubleshooting](/help/en/troubleshooting/)
 Common errors and their solutions.

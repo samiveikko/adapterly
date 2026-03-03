@@ -1,35 +1,32 @@
 # MCP Integration
 
-Adapterly integrates with Claude AI through the Model Context Protocol (MCP), enabling intelligent automation where AI can directly interact with your connected systems.
+Adapterly acts as an MCP (Model Context Protocol) server, giving AI agents access to your connected business systems as callable tools.
 
 ## What is MCP?
 
-The Model Context Protocol (MCP) is a standard that allows AI assistants like Claude to use external tools. Adapterly acts as an MCP server, providing Claude with tools to:
-
-- Read data from your connected systems
-- Write and update data
-- Monitor task status
+The Model Context Protocol (MCP) is a standard that allows AI assistants like Claude, ChatGPT, and Cursor to use external tools. Adapterly implements MCP via Streamable HTTP (JSON-RPC 2.0).
 
 ## How It Works
 
 ```
-Claude AI
-    ↓ (MCP protocol)
-Adapterly MCP Server
-    ↓ (authenticated requests)
-Your Connected Systems
-    (Infrakit, Google Sheets, etc.)
+AI Agent (Claude, ChatGPT, etc.)
+    | (MCP JSON-RPC 2.0)
+    v
+Adapterly MCP Gateway
+    | (authenticated API calls)
+    v
+External Systems (Infrakit, Unifaun, etc.)
 ```
 
-1. Claude receives a user request
-2. Claude decides which Adapterly tools to use
-3. Adapterly authenticates and calls external APIs
-4. Results are returned to Claude
-5. Claude presents the information to the user
+1. AI agent connects to Adapterly's MCP endpoint
+2. Agent discovers available tools via `tools/list`
+3. Agent calls tools via `tools/call`
+4. Adapterly authenticates, calls the external API, and returns results
+5. Every call is logged in the audit log
 
 ## Available Tools
 
-### System Tools
+### System Tools (Auto-generated)
 
 For each configured system, Adapterly generates MCP tools:
 
@@ -45,74 +42,25 @@ For each configured system, Adapterly generates MCP tools:
 
 ### Management Tools
 
-Workspace and account management (requires Power mode):
+Account and session management (available based on API key permissions):
 
 | Tool | Type | Description |
 |------|------|-------------|
-| `workspace_create` | write | Create/get workspace by external_id (idempotent) |
-| `workspace_list` | read | List account's workspaces |
-| `workspace_get` | read | Get workspace details |
-| `workspace_add_member` | write | Add user to workspace |
-| `workspace_remove_member` | write | Remove user from workspace |
-| `workspace_update_role` | write | Update user's role |
 | `account_get` | read | Get account details |
 | `admin_session_create` | write | Create federated login session |
-
-## Using MCP Tools
-
-### Listing Projects
-
-```
-User: "Show me all my Infrakit projects"
-
-Claude uses: infrakit_projects_list()
-
-Claude: "Here are your 5 projects:
-1. Highway 101 Extension
-2. Bridge Renovation Phase 2
-3. Commercial Center Foundation
-..."
-```
-
-### Creating Data
-
-```
-User: "Add a logpoint at coordinates 60.1699, 24.9384"
-
-Claude uses: infrakit_logpoints_create(
-    project_uuid="...",
-    coordinates=[60.1699, 24.9384],
-    description="New survey point"
-)
-
-Claude: "I've created the logpoint at the specified location."
-```
 
 ## MCP Modes
 
 ### Safe Mode (Default)
 
-- Read operations allowed
-- Write operations blocked
+- Read operations allowed (list, get)
+- Write operations blocked (create, update, delete)
 
 ### Power Mode
 
 - All operations allowed
-- Required for management tools (workspace_create, etc.)
-- Enable via API key settings
-
-## Context Setup
-
-Before using tools, set the execution context:
-
-```
-Claude uses: set_context(
-    account_id="123",
-    workspace_id="ws-uuid-here"
-)
-```
-
-This establishes which account/workspace you're working with.
+- Required for write operations
+- Enable via API key settings or Agent Profile
 
 ## Setting Up MCP
 
@@ -121,11 +69,11 @@ This establishes which account/workspace you're working with.
 1. Go to **MCP Gateway** → **API Keys**
 2. Click **Create API Key**
 3. Select an Agent Profile (optional) or set mode manually
-4. Copy the key (it won't be shown again)
+4. Copy the key (`ak_live_xxx`) - it won't be shown again
 
 ### 2. Connection Options
 
-#### Option A: Streamable HTTP (Remote Agents, Claude.ai)
+#### Option A: Streamable HTTP (Recommended)
 
 MCP Streamable HTTP - single endpoint for all JSON-RPC communication:
 
@@ -182,28 +130,51 @@ const response2 = await fetch('https://adapterly.ai/mcp/v1/', {
 });
 ```
 
-#### Option B: stdio (Claude Code, Local Development)
+#### Option B: Claude Desktop / Claude Code
 
-For Claude Code or local CLI usage, run the MCP server directly:
+Configure your MCP client to connect via Streamable HTTP:
 
-```bash
-python manage.py mcp_server \
-  --account-id 123 \
-  --api-key ak_live_xxx \
-  --mode safe
-```
-
-**Claude Code configuration** (`~/.claude/claude_desktop_config.json`):
+**Claude Desktop** (`claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
     "adapterly": {
-      "command": "python",
-      "args": ["manage.py", "mcp_server",
-               "--account-id", "123",
-               "--api-key", "ak_live_xxx",
-               "--mode", "safe"],
-      "cwd": "/path/to/adapterly"
+      "url": "https://adapterly.ai/mcp/v1/",
+      "headers": {
+        "Authorization": "Bearer ak_live_xxx"
+      }
+    }
+  }
+}
+```
+
+**Claude Code** (`.claude/settings.json`):
+```json
+{
+  "mcpServers": {
+    "adapterly": {
+      "type": "url",
+      "url": "https://adapterly.ai/mcp/v1/",
+      "headers": {
+        "Authorization": "Bearer ak_live_xxx"
+      }
+    }
+  }
+}
+```
+
+#### Option C: Standalone Gateway
+
+For on-premise deployments, connect to a local gateway instance:
+
+```json
+{
+  "mcpServers": {
+    "adapterly": {
+      "url": "http://localhost:8080/mcp/v1/",
+      "headers": {
+        "Authorization": "Bearer ak_live_xxx"
+      }
     }
   }
 }
@@ -211,10 +182,10 @@ python manage.py mcp_server \
 
 ### 3. Verify Connection
 
-Ask Claude:
+Ask your AI agent:
 > "What Adapterly tools do you have access to?"
 
-Claude should list all available system tools.
+The agent should list all available system tools.
 
 ## Tool Parameters
 
@@ -225,7 +196,7 @@ Each tool has specific parameters based on its action:
 {
   "page": 1,
   "pageSize": 100,
-  "fetch_all_pages": true  // Automatically paginate
+  "fetch_all_pages": true
 }
 ```
 
@@ -253,7 +224,7 @@ For list endpoints with many items, Adapterly handles pagination automatically:
 ```
 User: "Get all logpoints from the project"
 
-Claude uses: infrakit_logpoints_list(
+AI calls: infrakit_logpoints_list(
     project_uuid="...",
     fetch_all_pages=true
 )
@@ -267,7 +238,7 @@ Claude uses: infrakit_logpoints_list(
 
 ## Error Handling
 
-When an MCP tool fails, Claude receives error details:
+When an MCP tool fails, the agent receives error details:
 
 ```json
 {
@@ -277,7 +248,7 @@ When an MCP tool fails, Claude receives error details:
 }
 ```
 
-Claude will typically:
+The agent will typically:
 1. Explain the error to the user
 2. Suggest remediation steps
 3. Retry if appropriate
@@ -288,37 +259,20 @@ Claude will typically:
 Instead of "get project data", say "list all active Infrakit projects".
 
 ### 2. Provide Context
-Give Claude the information it needs:
+Give the agent the information it needs:
 > "Using project ID abc123, create a logpoint at coordinates 60.17, 24.94"
 
 ### 3. Review Before Writing
-Ask Claude to show you what it will create before actually creating it:
+Ask the agent to show you what it will create before actually creating it:
 > "Show me the logpoint data you would create, but don't create it yet"
 
 ## Security
 
-### Token Permissions
-API tokens have the same permissions as the user who created them. Use dedicated service accounts for automation.
+### API Key Permissions
+API keys are scoped by mode (safe/power), project, and Agent Profile. Use the minimum access needed.
 
 ### Audit Trail
-All MCP tool calls are logged and visible in the Executions section.
+All MCP tool calls are logged and visible in MCP Gateway → Audit Log.
 
 ### Rate Limiting
 MCP calls are subject to the same rate limits as direct API access.
-
-## Troubleshooting
-
-### "Tool not found"
-- Check that the system is properly configured
-- Verify the interface has the expected resources and actions
-- Restart Claude Desktop after configuration changes
-
-### "Authentication failed"
-- Regenerate your API token
-- Ensure the token is correctly set in environment variables
-- Check that credentials are configured for the target system
-
-### "Timeout"
-- External API may be slow or unreachable
-- Try a smaller request (fewer items)
-- Check rate limit status

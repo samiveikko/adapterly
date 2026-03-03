@@ -1,258 +1,280 @@
-# YAML Reference
+# Reference
 
-Official Adapterly configuration reference documentation.
+Official Adapterly technical reference documentation.
 
-## Step Types
+## YAML Adapter Definition Schema
 
-### read
+Adapters are defined in YAML files under `adapters/<industry>/<system>.yaml`.
 
-Reads data from external system.
-
-```yaml
-- id: list_items
-  type: read
-  config:
-    system: string              # System name
-    resource: string            # Resource name
-    action: string              # Action name
-    params:
-      fetch_all_pages: boolean
-      page: integer
-      pageSize: integer
-```
-
-**Output:**
-```yaml
-output:
-  data: [...]
-  meta:
-    count: integer
-    pages: integer
-    duration_ms: integer
-    request_id: string
-```
-
-### write
-
-Writes data to external system.
+### System
 
 ```yaml
-- id: create_item
-  type: write
-  config:
-    system: string
-    resource: string
-    action: string              # create, update, delete, bulk_upsert
-    params: {...}
+system:
+  name: string              # Display name (e.g., "Infrakit")
+  alias: string             # URL-safe identifier used in tool names (e.g., "infrakit")
+  industry: string          # Category: construction, logistics, erp, general
+  website: string           # System's website URL
+  description: string       # Brief description
+  confirmation_status: string  # "unconfirmed" (default) or "confirmed"
 ```
 
-### transform
-
-Transforms data with Python code.
+### Interface
 
 ```yaml
-- id: process_data
-  type: transform
-  config:
-    language: python
-    code: |
-      result = []
-      for item in input_data:
-          result.append(transform(item))
-      return result
-    inputs:
-      input_data: "${steps.previous.output.data}"
+interfaces:
+  - name: string            # Interface display name (e.g., "REST API")
+    alias: string           # Identifier (e.g., "api")
+    base_url: string        # API root (e.g., "https://api.example.com/v1")
+    auth_type: string       # api_key, bearer, oauth2_password, basic, drf_token, xhr
+    rate_limit: integer     # Requests per minute (optional)
 ```
 
-### condition
-
-Branches based on condition.
+### Resource
 
 ```yaml
-- id: check_condition
-  type: condition
-  config:
-    condition: "${steps.count.output.data.value} > 100"
-    true_branch: handle_large
-    false_branch: handle_small
+    resources:
+      - name: string        # Resource display name (e.g., "Projects")
+        alias: string       # Identifier used in tool names (e.g., "projects")
+        description: string # Brief description
 ```
 
-### loop
-
-Iterates over collection.
+### Action
 
 ```yaml
-- id: process_items
-  type: loop
-  config:
-    items: "${steps.list.output.data}"
-    concurrency: integer
-    steps:
-      - id: process_one
-        type: write
-        config: {...}
+        actions:
+          - name: string          # Action display name (e.g., "List Projects")
+            alias: string         # Identifier (e.g., "list")
+            method: string        # HTTP method: GET, POST, PUT, PATCH, DELETE
+            path: string          # URL path (e.g., "/projects")
+            is_mcp_enabled: boolean  # true = exposed as MCP tool
+            mcp_mode: string      # "safe" (read) or "power" (write)
+            description: string   # Tool description shown to AI agents
+            parameters:           # JSON Schema for tool parameters
+              type: object
+              properties:
+                param_name:
+                  type: string
+                  description: string
 ```
 
-### switch
-
-Multiple condition branches.
+### Full Example
 
 ```yaml
-- id: route_by_type
-  type: switch
-  config:
-    value: "${steps.get_item.output.data.type}"
-    cases:
-      "typeA": handle_a
-      "typeB": handle_b
-    default: handle_other
+system:
+  name: "Example API"
+  alias: "example"
+  industry: "general"
+  website: "https://example.com"
+
+interfaces:
+  - name: "REST API"
+    alias: "api"
+    base_url: "https://api.example.com/v1"
+    auth_type: "api_key"
+    resources:
+      - name: "Items"
+        alias: "items"
+        actions:
+          - name: "List Items"
+            alias: "list"
+            method: "GET"
+            path: "/items"
+            is_mcp_enabled: true
+            mcp_mode: "safe"
+            parameters:
+              type: object
+              properties:
+                page:
+                  type: integer
+                  description: "Page number"
+                pageSize:
+                  type: integer
+                  description: "Items per page"
+          - name: "Create Item"
+            alias: "create"
+            method: "POST"
+            path: "/items"
+            is_mcp_enabled: true
+            mcp_mode: "power"
+            parameters:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: "Item name"
+              required:
+                - name
 ```
 
-### wait
-
-Waits for specified time.
-
-```yaml
-- id: delay
-  type: wait
-  config:
-    seconds: integer            # OR
-    milliseconds: integer
-```
-
-### notify
-
-Sends notification.
-
-```yaml
-- id: send_alert
-  type: notify
-  config:
-    channel: string             # email, slack, webhook
-    to: string
-    subject: string
-    body: string
-```
-
-### user_input
-
-Requests user input.
-
-```yaml
-- id: get_approval
-  type: user_input
-  config:
-    prompt: string
-    options:
-      - "Approve"
-      - "Reject"
-    timeout_seconds: integer
-```
+This generates two MCP tools: `example_items_list` (safe) and `example_items_create` (power).
 
 ---
 
-## Template Language
+## MCP JSON-RPC 2.0 Protocol
 
-### Variable Types
+Adapterly implements the MCP specification via Streamable HTTP.
 
-| Syntax | Description | Example |
-|--------|-------------|---------|
-| `${var:name}` | Variable | `${var:sheet_id}` |
-| `${env:NAME}` | Environment variable | `${env:API_KEY}` |
-| `${env:NAME:default}` | With default | `${env:TIMEOUT:30}` |
-| `${steps.id.output.data}` | Step output | `${steps.list.output.data}` |
+### Endpoint
 
-### Path Operations
-
-```yaml
-# Full data
-"${steps.list.output.data}"
-
-# Specific index
-"${steps.list.output.data[0]}"
-
-# Specific field
-"${steps.list.output.data[0].name}"
-
-# Nested path
-"${steps.get.output.data.user.profile.email}"
 ```
-
----
-
-## Error Handling
-
-### Step-level on_error
-
-```yaml
-- id: risky_step
-  type: read
-  config: {...}
-  on_error:
-    action: retry
-    retry_count: 3
-    retry_delay_seconds: 5
-    retry_backoff: exponential
+POST https://adapterly.ai/mcp/v1/
 ```
-
-### Global error_handling
-
-```yaml
-error_handling:
-  default_action: fail
-  notify_on_fail:
-    channel: email
-    to: "${env:ALERT_EMAIL}"
-```
-
-### Priority Order
-
-1. Step-level `on_error` if defined
-2. Global `error_handling.default_action` if defined
-3. Default: `fail`
-
----
-
-## Schedule
-
-### Cron Syntax
-
-```yaml
-schedule:
-  cron: "minute hour day month weekday"
-  timezone: "Europe/Helsinki"
-```
-
-### Examples
-
-```yaml
-# Every hour
-cron: "0 * * * *"
-
-# Daily at 9 AM
-cron: "0 9 * * *"
-
-# Weekdays at 9 AM
-cron: "0 9 * * MON-FRI"
-
-# Every 15 minutes
-cron: "*/15 * * * *"
-```
-
----
-
-## API Reference
 
 ### Authentication
 
-```bash
-Authorization: Token your-api-token
+```
+Authorization: Bearer ak_live_xxx
 ```
 
-### Endpoints
+### Methods
+
+| Method | Description |
+|--------|-------------|
+| `initialize` | Initialize MCP session, receive capabilities |
+| `tools/list` | List all available tools |
+| `tools/call` | Call a specific tool |
+| `ping` | Health check |
+
+### Initialize
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "my-client",
+      "version": "1.0.0"
+    }
+  }
+}
+```
+
+### Tools List
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/list",
+  "params": {}
+}
+```
+
+Response:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "tools": [
+      {
+        "name": "infrakit_projects_list",
+        "description": "List all Infrakit projects",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "page": {"type": "integer"},
+            "pageSize": {"type": "integer"}
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+### Tools Call
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "infrakit_projects_list",
+    "arguments": {
+      "page": 1,
+      "pageSize": 50
+    }
+  }
+}
+```
+
+Response:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"data\": [...], \"meta\": {\"count\": 5}}"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## HTTP Endpoints
+
+### MCP Streamable HTTP
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/systems/` | List systems |
-| GET | `/api/systems/{id}/` | Get system details |
-| POST | `/api/systems/{id}/test/` | Test system connection |
+| `POST` | `/mcp/v1/` | Send JSON-RPC message(s) |
+| `GET` | `/mcp/v1/` | Open SSE stream for notifications |
+| `DELETE` | `/mcp/v1/` | Close session |
+
+### REST API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/systems/` | List systems |
+| `GET` | `/api/systems/{id}/` | Get system details |
+| `POST` | `/api/systems/{id}/test/` | Test system connection |
+| `GET` | `/api/mcp/api-keys/` | List API keys |
+| `POST` | `/api/mcp/api-keys/` | Create API key |
+| `GET` | `/api/mcp/audit-logs/` | List audit logs |
+| `GET` | `/api/mcp/agent-profiles/` | List agent profiles |
+
+### Gateway Sync API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/gateway-sync/v1/register` | Register a gateway |
+| `GET` | `/gateway-sync/v1/specs` | Sync adapter specs |
+| `GET` | `/gateway-sync/v1/keys` | Sync API keys |
+| `POST` | `/gateway-sync/v1/audit` | Push audit logs |
+| `POST` | `/gateway-sync/v1/health` | Push health status |
+
+---
+
+## Error Codes
+
+### MCP JSON-RPC Errors
+
+| Code | Name | Description |
+|------|------|-------------|
+| `-32700` | Parse error | Invalid JSON |
+| `-32600` | Invalid request | Missing required fields |
+| `-32601` | Method not found | Unknown MCP method |
+| `-32602` | Invalid params | Wrong parameter types or missing required params |
+| `-32603` | Internal error | Server error during tool execution |
+
+### HTTP Status Codes
+
+| Code | Meaning | Action |
+|------|---------|--------|
+| `400` | Bad request | Check parameters |
+| `401` | Unauthorized | Check API key |
+| `403` | Forbidden | Check permissions / mode |
+| `404` | Not found | Check resource ID/path |
+| `429` | Rate limit | Wait and retry |
+| `500` | Server error | Retry later |

@@ -1,243 +1,168 @@
 # Getting Started with Adapterly
 
-Welcome to Adapterly! This tutorial will help you understand what Adapterly is, how it works, and how to get started with your first automation.
+Welcome to Adapterly! This tutorial will help you understand what Adapterly is, how it works, and how to connect your first system.
 
 ---
 
 ## What is Adapterly?
 
-**Adapterly** is an AI-powered integration platform that helps you connect different systems and automate data flows between them. Think of it as a bridge that connects your business tools and makes them work together automatically.
+**Adapterly** is an MCP (Model Context Protocol) gateway that connects AI agents to external business systems. It turns REST APIs, GraphQL endpoints, and web services into MCP tools that AI agents like Claude, ChatGPT, and Cursor can use directly.
 
 ### Key Benefits
 
 | Benefit | Description |
 |---------|-------------|
-| **No coding required** | Build automations through an intuitive interface |
-| **Connect any API** | Works with REST APIs, webhooks, and custom integrations |
-| **AI-powered** | AI assistant helps with automation and external agents can use your integrations |
-| **Reliable** | Built-in error handling, retries, and monitoring |
-| **Secure** | Credentials stored encrypted, audit logging, role-based access |
+| **70 pre-built adapters** | Construction, logistics, ERP, and general business systems ready to connect |
+| **MCP native** | Standard protocol supported by Claude, ChatGPT, Cursor, and others |
+| **Project scoping** | Isolate integrations and control access per project |
+| **Audit logging** | Every tool call is logged with full request/response details |
+| **Secure** | Credentials stored encrypted, category-based access control |
 
 ### Common Use Cases
 
-- **Data synchronization** - Keep data in sync between CRM, spreadsheets, and databases
-- **Report generation** - Automatically collect data and generate reports
-- **Process automation** - Trigger actions based on events in other systems
-- **AI agent backends** - Provide integrations as tools for AI assistants
+- **Construction project management** - Query Infrakit, Congrid, Procore data through AI
+- **Logistics tracking** - Check shipments across DHL, Posti, nShift via natural language
+- **Cross-system queries** - Ask AI to combine data from multiple systems
+- **Data entry automation** - Let AI create records in connected systems
 
 ---
 
 ## How Adapterly Works
 
-Adapterly uses a simple but powerful model:
+Adapterly follows a simple architecture:
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   SYSTEMS   │ ──▶ │ INTEGRATIONS│ ──▶ │  MCP TOOLS  │
-│ (your APIs) │     │ (connections)│     │ (AI access) │
-└─────────────┘     └─────────────┘     └─────────────┘
+System (e.g., Infrakit)
+  └── Interface (e.g., REST API)
+        └── Resource (e.g., "projects")
+              └── Action (e.g., "list", "get", "create")
+                    └── MCP Tool (e.g., "infrakit_projects_list")
 ```
 
-### 1. Systems
+Each system's resources and actions are automatically converted into MCP tools that AI agents can discover and call.
 
-A **System** represents an external service you want to connect to. This could be:
+### Tool Naming
 
-- A SaaS product (Salesforce, HubSpot, Google Sheets)
-- Your own internal API
-- Any REST-based service
+Tools follow the pattern: `{system_alias}_{resource_alias}_{action_alias}`
 
-Each system has:
-- **Resources** - Data types (contacts, deals, projects)
-- **Actions** - Operations (list, get, create, update, delete)
-- **Authentication** - API keys, OAuth, or custom auth
-
-**Example:** A "Salesforce" system might have a "Contacts" resource with "list" and "create" actions.
-
-### 2. Integrations
-
-**Integrations** connect your systems and enable data flow between them:
-
-- Each system exposes resources and actions
-- MCP tools are auto-generated for AI agent access
-- API tokens control access and permissions
-
-**Example:** Connecting Salesforce and Google Sheets so an AI agent can read contacts and update spreadsheets.
-
-### 3. MCP Tools
-
-**MCP Tools** are auto-generated functions that AI agents can use to interact with your connected systems:
-
-- Each system's resources and actions become callable tools
-- Tools follow the naming pattern: `{system}_{resource}_{action}`
-- All tool calls are logged and auditable
+Examples:
+- `infrakit_projects_list` - List all Infrakit projects
+- `congrid_observations_get` - Get a specific Congrid observation
+- `unifaun_shipments_create` - Create a shipment in Unifaun
 
 ---
 
 ## Quick Start Guide
 
-### Step 1: Add Your First System
+### Step 1: Choose Adapters
 
 1. Go to **Systems** in the navigation
-2. Click **Add System**
-3. Choose a type:
-   - **OpenAPI** - Upload a spec file (recommended for REST APIs)
-   - **Manual** - Define resources and actions yourself
-4. Configure authentication
-5. Test the connection
+2. Browse 70 pre-built adapters across four categories:
+   - **Construction** (31) - Procore, Infrakit, Congrid, Tekla, Dalux, etc.
+   - **Logistics** (12) - DHL, Posti, Bring, nShift, etc.
+   - **ERP** (13) - SAP, Dynamics 365, Visma, Admicom, etc.
+   - **General** (14) - Slack, Teams, SharePoint, Google Drive, etc.
+3. Select the systems you want to connect
 
-### Step 2: Configure Resources
+### Step 2: Configure Credentials
 
-1. Review the discovered resources and actions
-2. Test individual endpoints
-3. Verify data is returned correctly
+1. Go to **Systems** → select your system → **Configure**
+2. Enter credentials based on the system's auth type:
+   - **OAuth 2.0** - Client ID, secret, token URL
+   - **API Key** - Key value and header name
+   - **Bearer Token** - Pre-generated access token
+   - **DRF Token** - Username and password (token auto-generated)
+3. Click **Test Connection** to verify
 
-### Step 3: Test via MCP
+### Step 3: Create a Project
 
-1. Generate an API key for MCP access
-2. Connect Claude or another AI agent
-3. Ask the agent to list available tools
-4. Test reading data from your connected systems
+1. Go to **Projects** → **Create New**
+2. Give the project a name (e.g., "E18 Highway Project")
+3. Add **Project Integrations** - select which systems this project can access
+4. Optionally restrict by tool categories
 
-### Step 4: Integrate
+### Step 4: Generate an API Key
 
-Once tested, you can:
-- **Use via MCP** - AI agents can access your systems as tools
-- **Use via API** - Call system endpoints directly
-- **Share access** - Invite team members with appropriate roles
+1. Go to **MCP Gateway** → **API Keys**
+2. Click **Create API Key**
+3. Choose mode:
+   - **Safe** (default) - Read-only access
+   - **Power** - Full read/write access
+4. Optionally bind to a specific project
+5. Copy the key (`ak_live_xxx`) - it won't be shown again
+
+### Step 5: Connect Your AI Agent
+
+Configure your MCP client with the Streamable HTTP endpoint:
+
+```json
+{
+  "mcpServers": {
+    "adapterly": {
+      "url": "https://adapterly.ai/mcp/v1/",
+      "headers": {
+        "Authorization": "Bearer ak_live_xxx"
+      }
+    }
+  }
+}
+```
+
+Ask your AI agent: *"What Adapterly tools do you have access to?"*
 
 ---
 
-## Understanding Variables
+## Example: Using Infrakit Tools
 
-Variables help configure your integrations dynamically.
+Here's what a typical interaction looks like:
 
-### Variable Syntax
+```
+User: "Show me all my Infrakit projects"
 
-```yaml
-# Environment variable (secret)
-api_key: "${env:MY_API_KEY}"
+AI calls: infrakit_projects_list()
 
-# Configuration variable
-sheet_id: "${var:target_sheet}"
+AI: "Here are your 5 projects:
+    1. Highway 101 Extension (active)
+    2. Bridge Renovation Phase 2 (active)
+    3. Commercial Center Foundation (archived)
+    ..."
 ```
 
-### Common Patterns
+```
+User: "Get the machine data for Highway 101"
 
-```yaml
-# Use environment variable for sensitive data
-params:
-  apiKey: "${env:SERVICE_API_KEY}"
+AI calls: infrakit_machines_list(project_uuid="abc-123")
 
-# Use configuration variable
-params:
-  spreadsheetId: "${var:sheet_id}"
+AI: "Found 8 machines currently tracked:
+    - Excavator CAT 320 (last seen 2 hours ago)
+    - Bulldozer Komatsu D65 (active now)
+    ..."
 ```
 
 ---
 
-## For AI Agents (MCP)
+## Security
 
-Adapterly exposes your connected systems as tools for AI agents via the **Model Context Protocol (MCP)**.
-
-### How It Works
-
-1. Connect systems and configure resources
-2. Enable MCP access for your account
-3. Generate an API key for the agent
-4. The agent can discover and call your system tools
-
-### Example Agent Flow
-
-```
-User: "Get me the latest sales report"
-    │
-    ▼
-Agent: Calls "salesforce_reports_get" tool in Adapterly
-    │
-    ▼
-Adapterly: Fetches the data from Salesforce, returns results
-    │
-    ▼
-Agent: Formats and presents the report to user
-```
-
-### Security
-
-- Agents use scoped API keys
-- All calls are logged in the audit log
-- Category-based access control limits what agents can do
-- Tools can require specific context (account, user)
-
----
-
-## Client Apps (External Integration)
-
-For building custom integrations, Adapterly provides a **Client Apps** API.
-
-### What Client Apps Can Do
-
-| Capability | Description |
-|------------|-------------|
-| Manage accounts | Create and update accounts via external_id |
-| Manage workspaces | Organize integrations into isolated spaces |
-| Execute operations | Run system operations and get results |
-| Create sessions | Generate login tokens for your users |
-
-### API Authentication
-
-Client Apps use Bearer token authentication:
-
-```bash
-curl -H "Authorization: Bearer ca_live_abc123..." \
-     https://your-instance/api/v1/client/workspaces/
-```
-
-### Typical Integration Flow
-
-1. **Create a Client App** in the Adapterly UI
-2. **Save the API key** (shown only once)
-3. **Configure scopes** (what the app can do)
-4. **Integrate** using the REST API
+- **API keys** control access - each key can be scoped to a project and mode
+- **Agent Profiles** define reusable permission sets (allowed categories, included/excluded tools)
+- **Audit logging** records every MCP tool call with timestamps, parameters, and results
+- **Category-based access control** - tools are grouped into categories, policies restrict access at agent, project, and user levels
 
 ---
 
 ## Best Practices
 
-### Integration Design
-
-1. **Keep resources focused** - Each resource should represent one entity
-2. **Use meaningful names** - Clear naming helps AI agents understand tools
-3. **Handle errors** - Configure retry logic for external calls
-4. **Test incrementally** - Verify connections after each change
-
-### Security
-
-1. **Use environment variables** for secrets, never hardcode
-2. **Limit scopes** - Give agents only the access they need
-3. **Review audit logs** - Monitor for unexpected activity
-4. **Rotate keys** periodically
-
-### Performance
-
-1. **Use pagination** - Fetch data in chunks for large datasets
-2. **Cache when possible** - Store frequently used reference data
-3. **Batch operations** - Update many records in one call when supported
-
----
-
-## Getting Help
-
-- **Documentation** - You're reading it! Explore other sections.
-- **FAQ** - Common questions and answers
-- **Troubleshooting** - Solutions to common problems
+1. **Start with Safe mode** - Use read-only access until you're confident in the setup
+2. **Scope projects tightly** - Only include the systems each project actually needs
+3. **Use Agent Profiles** - Create reusable profiles instead of configuring each key individually
+4. **Monitor audit logs** - Review tool calls regularly for unexpected activity
+5. **Rotate keys** - Regenerate API keys periodically
 
 ---
 
 ## Next Steps
 
-Now that you understand the basics:
-
-1. **[Core Concepts](/help/en/concepts/)** - Deep dive into systems and integrations
+1. **[Core Concepts](/help/en/concepts/)** - Understand projects, permissions, and gateway architecture
 2. **[Guides](/help/en/guides/)** - Step-by-step instructions for specific tasks
-3. **[Recipes](/help/en/recipes/)** - Copy-paste examples for common use cases
-4. **[MCP & Agents](/help/en/mcp/)** - Learn about AI agent integration
+3. **[Recipes](/help/en/recipes/)** - MCP usage examples and conversation patterns
+4. **[MCP & Agents](/help/en/mcp/)** - Protocol details and connection setup

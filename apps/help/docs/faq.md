@@ -3,127 +3,135 @@
 ## General
 
 ### What is Adapterly?
-Adapterly is an AI-powered integration platform. It connects to your external systems (APIs, databases, SaaS apps) and automates data flows between them. It also integrates with Claude AI for intelligent automation.
+Adapterly is an MCP (Model Context Protocol) gateway that connects AI agents to external business systems. It provides 70 pre-built adapters for construction, logistics, ERP, and general tools, letting AI agents like Claude, ChatGPT, and Cursor query and manage your data.
 
 ### Who is Adapterly for?
-- Business analysts who need to automate data processes
-- Developers who want to quickly connect APIs
-- Teams managing data across multiple platforms
-- Anyone who needs to automate repetitive tasks
+- Teams using AI agents who need access to business systems
+- System integrators connecting multiple APIs
+- Enterprises managing data across platforms with audit and access control
+- Construction, logistics, and ERP professionals
 
-### Do I need to know how to code?
-No. Adapterly provides:
-- Pre-built system adapters
-- Adapter Wizard for auto-configuration
-- MCP integration for AI-powered automation
-
-For advanced transformations, you can write Python code in function steps.
+### How is Adapterly different from a regular API gateway?
+Adapterly speaks the MCP protocol natively. AI agents can discover available tools, understand their parameters, and call them directly. No custom integration code needed - just connect your systems and give the agent an API key.
 
 ## Systems
 
 ### How do I connect a new system?
-1. Go to **Systems** → **Create New**
-2. Use the **Adapter Wizard** to auto-discover endpoints from:
-   - OpenAPI/Swagger specification
-   - HAR file (recorded API calls)
-   - Manual configuration
+1. Go to **Systems** → browse the 70 pre-built adapters
+2. Select the system you want
+3. Go to **Configure** and enter credentials (API key, OAuth, etc.)
+4. Click **Test Connection** - the system becomes "confirmed" after first successful call
 
 ### What authentication methods are supported?
-- OAuth 2.0 (password grant)
-- API Key
+- OAuth 2.0 (password grant, client credentials)
+- API Key (custom header)
 - Bearer Token
 - Basic Authentication
-- Session/Cookie (for web apps)
+- DRF Token (username/password → auto-generated token)
+- Session/Cookie (XHR for web apps)
 
 ### Why does my connection test fail?
 Common causes:
-- Incorrect credentials
-- API endpoint is down
+- Incorrect credentials (wrong key, expired token)
+- API endpoint is down or unreachable
 - Network/firewall restrictions
-- Rate limiting
+- Rate limiting from the external API
 
 Check the error message for specific details.
 
-### Can I connect to internal/private APIs?
-Yes, as long as Adapterly can reach the API endpoint. For on-premise systems, you may need to configure network access.
+### Can I add a custom system not in the pre-built list?
+Yes. Create a YAML adapter definition in `adapters/<industry>/<system>.yaml` and run `python manage.py load_adapters`. See the [Guides](/help/en/guides/) for details.
 
-## MCP & AI
+## MCP & AI Agents
 
 ### What is MCP?
-Model Context Protocol (MCP) is a standard for AI assistants to use external tools. Adapterly acts as an MCP server, giving Claude AI access to your connected systems.
+Model Context Protocol (MCP) is a standard for AI assistants to use external tools. Adapterly acts as an MCP server, giving AI agents access to your connected systems via Streamable HTTP (JSON-RPC 2.0).
 
-### How does Claude use Adapterly?
-When you ask Claude to work with your data, it can:
-1. List available tools from Adapterly
-2. Call tools to read/write data
-3. Present results conversationally
+### Which AI agents work with Adapterly?
+Any MCP-compatible client, including:
+- Claude (Desktop and Code)
+- ChatGPT (with MCP support)
+- Cursor
+- Custom agents using MCP libraries
+
+### How do I connect Claude to Adapterly?
+1. Generate an API key in MCP Gateway → API Keys
+2. Add to your Claude configuration:
+   ```json
+   {
+     "mcpServers": {
+       "adapterly": {
+         "url": "https://adapterly.ai/mcp/v1/",
+         "headers": {
+           "Authorization": "Bearer ak_live_xxx"
+         }
+       }
+     }
+   }
+   ```
+3. Ask Claude: "What Adapterly tools do you have?"
+
+### What's the difference between Safe and Power mode?
+- **Safe mode** (default): Read-only - agents can list and get data but can't create, update, or delete
+- **Power mode**: Full access - agents can perform all operations including writes
 
 ### Is my data safe with AI access?
-- All MCP calls use your authenticated session
-- Actions are limited to your permissions
-- Every tool call is logged
-- You can revoke API tokens anytime
+- All MCP calls are authenticated via API keys
+- Access is controlled by mode, Agent Profile, and project scoping
+- Every tool call is logged in the audit log with full details
+- You can revoke API keys instantly
+- Credentials are stored encrypted
 
-### What can Claude do vs. what requires manual setup?
-Claude can:
+### What can AI agents do vs. what requires manual setup?
+AI agents can:
 - Read data from configured systems
-- Create/update data where permitted
-- Check task status
+- Create/update/delete data (with Power mode)
+- Query across multiple systems
 
-Claude cannot:
-- Configure new systems
-- Modify system credentials
+AI agents cannot:
+- Configure new systems or credentials
+- Manage API keys or permissions
 - Access systems without configured credentials
 
-## Troubleshooting
+## Projects
 
-### "No interface configured"
-The system doesn't have any API endpoints defined. Use the Adapter Wizard to add them.
+### What are Projects?
+Projects are scoped workspaces that control which systems are available to AI agents. Each project has its own set of system integrations and access policies.
 
-### "Authentication failed"
-- Check credentials in System → Configure
-- For OAuth, verify username/password
-- Regenerate API tokens if needed
+### Do I need to create a project?
+Projects are optional. If your API key isn't bound to a project, the agent can access all systems in your account. Projects are useful for:
+- Restricting access to specific systems per use case
+- Organizing integrations by business context
+- Applying different permission policies
 
-### "Connection timeout"
-- External API may be slow or down
-- Check your network connectivity
-- Review rate limit status
+## Gateway Deployment
 
-### "Rate limit exceeded"
-- Too many requests in a short time
-- Wait before retrying
-- Consider batching operations
+### Can I run Adapterly on my own server?
+Yes. Adapterly supports a standalone gateway mode (Docker) that runs on your infrastructure. The gateway syncs adapter definitions from the control plane but keeps credentials locally.
 
-### "Variable not found"
-- Check variable spelling
-- Ensure the referenced step has run
-- Verify the output path exists
+### What's the difference between monolith and gateway mode?
+- **Monolith**: Everything on one server (Django + FastAPI + PostgreSQL)
+- **Control Plane + Gateway**: Central management at adapterly.ai, with standalone gateways on your servers. Credentials stay on the gateway.
 
-### "Invalid YAML syntax"
-- Check indentation (use spaces, not tabs)
-- Verify all quotes are matched
-- Use a YAML validator
+### How do I deploy a standalone gateway?
+1. Run `docker compose up -d` in the `adapterly-gateway/` directory
+2. Open the Setup Wizard at `http://your-host:8080/setup/`
+3. Register with the control plane and configure credentials
+4. Point your AI agents to `http://your-host:8080/mcp/v1/`
 
-## Account & Billing
+## Account & Team
 
 ### How do I add team members?
 Go to **Account Settings** → **Invite User** and enter their email address.
 
 ### What permissions can team members have?
-- **Admin** - Full access including system configuration
-- **User** - Can manage integrations and view executions
-
-### How do I change my password?
-Go to **Profile** → **Change Password**.
+- **Admin** - Full access including system configuration and API key management
+- **User** - View projects and use assigned integrations
 
 ## Getting Help
 
 ### Where can I report bugs?
-Contact support through the application or email.
+Contact support through the application or email support@adapterly.ai.
 
-### Is there a status page?
-System status and maintenance notices are posted in the application.
-
-### Can I request new features?
-Yes! We love feedback. Submit feature requests through the support channel.
+### Can I request new features or adapters?
+Yes! Submit feature requests through the support channel or contribute adapter YAML definitions directly.

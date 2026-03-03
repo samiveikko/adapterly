@@ -43,131 +43,132 @@ An action is an operation on a resource:
 - `update` - Update
 - `delete` - Delete
 
+Each action with `is_mcp_enabled = true` becomes an MCP tool.
+
 ---
 
-## Variables and Templating
+## Projects and Project Integrations
 
-### Variable Types
+### Projects
 
-| Syntax | Description | Example |
-|--------|-------------|---------|
-| `${var:name}` | Variable | `${var:sheet_id}` |
-| `${env:NAME}` | Environment variable | `${env:API_KEY}` |
-| `${env:NAME:default}` | Environment variable with default | `${env:TIMEOUT:30}` |
-| `${steps.id.output.data}` | Step output | `${steps.list_projects.output.data}` |
+A **Project** is a scoped workspace that controls which systems and tools are available to AI agents.
 
-### Standard Output
+- Projects belong to an Account
+- Each project has a name, slug, and optional description
+- API keys can be bound to a specific project
 
-Each step returns a consistent format:
+### Project Integrations
 
-```yaml
-output:
-  data: [...]       # Actual payload
-  meta:             # Metadata
-    count: 150
-    pages: 3
-    duration_ms: 1250
-    request_id: "abc123"
+A **ProjectIntegration** links a system to a project:
+
+- Controls which systems are accessible within a project
+- Each integration references a specific System
+- AI agents with a project-scoped API key can only access systems linked via ProjectIntegration
+
+**Example:**
+```
+"E18 Highway" Project
+  ├── ProjectIntegration → Infrakit
+  ├── ProjectIntegration → Congrid
+  └── ProjectIntegration → Google Sheets
 ```
 
 ---
 
-## Error Handling
+## API Keys and Modes
 
-### Priority Order
+### API Keys
 
-1. **Step-level `on_error`** - If defined
-2. **Global `error_handling.default_action`** - If defined
-3. **Default: `fail`** - Stop execution
+MCP API keys authenticate AI agents. Key format: `ak_live_xxx` (production) or `ak_test_xxx` (test).
 
-### Step-level Error Handling
+Each key has:
+- **Mode** - Safe (read-only) or Power (read/write)
+- **Project** (optional) - Restricts access to a specific project's systems
+- **Agent Profile** (optional) - Applies a reusable permission profile
+- **is_admin** - Can switch projects via header
 
-```yaml
-- id: risky_step
-  type: read
-  config: {...}
-  on_error:
-    action: retry          # retry, continue, fail
-    retry_count: 3
-    retry_delay_seconds: 5
-```
+### Modes
 
-### Actions
-
-| Action | Description |
-|--------|-------------|
-| `fail` | Stop execution immediately |
-| `continue` | Skip error and continue to next step |
-| `retry` | Retry (retry_count, retry_delay_seconds) |
+| Mode | Description |
+|------|-------------|
+| **Safe** (default) | Only read actions (list, get) are allowed |
+| **Power** | All actions allowed (list, get, create, update, delete) |
 
 ---
 
-## Pagination and Batch Processing
+## Permissions and Access Control
 
-### Automatic Pagination
+### Permission Layers
 
-Add `fetch_all_pages: true` to fetch all pages automatically:
+Access is controlled at multiple levels, intersected together:
 
-```yaml
-- id: list_all
-  type: read
-  config:
-    system: infrakit
-    resource: projects
-    action: list
-    params:
-      fetch_all_pages: true
+```
+Effective permissions = Agent policies ∩ Project policies ∩ User policies
 ```
 
-### Safety Limits
+### Tool Categories
 
-- Maximum 100 pages
-- Maximum 10,000 items
-- 2-minute timeout
-- Stops on empty or duplicate pages
+Tools are organized into categories (e.g., `construction.read`, `logistics.write`). Categories are mapped to tools via fnmatch patterns in `ToolCategoryMapping`.
 
----
+### Agent Profiles
 
-## Permissions and Roles
+Reusable permission profiles that can be attached to API keys:
+- **allowed_categories** - Which tool categories are permitted
+- **include_tools** - Explicitly included tools (override categories)
+- **exclude_tools** - Explicitly excluded tools
+- **mode** - Safe or Power
 
 ### User Roles
 
 | Role | Permissions |
 |------|-------------|
-| **Admin** | Full access: systems, integrations, user management |
-| **User** | Create and manage integrations, view executions |
-| **Viewer** | Read-only: view systems and executions |
-
-### API Tokens
-
-- Token inherits permissions of the user who created it
-- Use separate service accounts for automation
-- Tokens can be revoked at any time
+| **Admin** | Full access: systems, projects, API keys, user management |
+| **User** | View projects and systems assigned to them |
 
 ---
 
-## Auditing and Logs
+## Audit Logging
 
 ### What is Logged
 
-- All task executions
-- Inputs and outputs for each step
-- API calls to external systems
-- MCP tool calls
-- User actions (login, changes)
+Every MCP tool call is recorded in the audit log with:
+- Timestamp
+- API key used
+- Tool name and parameters
+- Response status and data
+- Duration
+- Account and project context
 
-### Retention
+### Viewing Logs
 
-- Execution history retained for 90 days by default
-- Export execution logs as JSON for archiving
-- Critical logs (errors, auth) retained longer
+- **UI**: MCP Gateway → Audit Log
+- **API**: `GET /api/mcp/audit-logs/`
 
-### Request ID
+---
 
-Each API call gets a unique `request_id` for tracing:
+## Gateway Architecture
 
-```yaml
-output:
-  meta:
-    request_id: "run_123_step_456_req_789"
-```
+Adapterly supports two deployment modes:
+
+### Monolith (Default)
+
+Everything runs on a single server:
+- Django handles UI and REST API
+- FastAPI handles MCP protocol (Streamable HTTP)
+- PostgreSQL stores all data
+
+### Control Plane + Gateway
+
+For distributed or on-premise deployments:
+
+**Control Plane** (Django at adapterly.ai):
+- Manages accounts, systems, adapter definitions
+- Provides Gateway Sync API for gateways to pull configuration
+
+**Gateway** (standalone FastAPI + SQLite):
+- Runs independently (e.g., on-premise, Docker)
+- Syncs adapter specs and API keys from control plane
+- Credentials stay on the gateway (never sent to control plane)
+- Provides MCP endpoint for AI agents
+
+The `gateway_core` shared package contains executor, crypto, models, auth, and diagnostics code used by both deployment modes.

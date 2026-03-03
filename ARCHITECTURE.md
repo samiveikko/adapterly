@@ -52,7 +52,7 @@ System (esim. "Jira", "Salesforce")
 
 **Tool-nimeäminen**: `{alias}_{resource}_{action}` → esim. `jira_issues_create`
 
-**Järjestelmien lukumäärä**: 67 kpl (47 rakentaminen, 13 logistiikka, 7 yleinen)
+**Järjestelmien lukumäärä**: 70 kpl (31 rakentaminen, 12 logistiikka, 13 ERP, 14 yleinen)
 
 ---
 
@@ -62,7 +62,7 @@ System (esim. "Jira", "Salesforce")
 |-----------|----------------|
 | Google OAuth (allauth) | Käyttäjän kirjautuminen selaimessa |
 | DRF Token (`Authorization: Token xxx`) | API-kutsut, agent-view yhteys |
-| MCP API Key (`mak_xxx`) | Agentin MCP-kutsut |
+| MCP API Key (`ak_live_xxx` / `ak_test_xxx`) | Agentin MCP-kutsut |
 | Device Authorization | Agent-view kirjautuminen ilman salasanaa |
 
 ### Device Authorization -flow
@@ -89,6 +89,52 @@ Agentti kutsuu toolia (esim. jira_issues_create)
 
 ---
 
+## Deployment-moodit
+
+Ympäristömuuttuja `DEPLOYMENT_MODE` ohjaa toimintaa:
+
+| Moodi | Kuvaus |
+|-------|--------|
+| `monolith` (oletus) | Django + FastAPI + PostgreSQL yhdellä palvelimella |
+| `control_plane` | Django control plane adapterly.ai:ssa, Gateway Sync API |
+| `gateway` | Standalone FastAPI gateway, synkkaa speksit control planelta |
+
+### Control Plane + Gateway -arkkitehtuuri
+
+```
+┌─────────────────────────────────────┐
+│  Control Plane (Django)             │
+│  ├── apps/gateways/ (Django app)    │
+│  ├── Gateway Sync API               │
+│  │   ├── /gateway-sync/v1/register  │
+│  │   ├── /gateway-sync/v1/specs     │
+│  │   ├── /gateway-sync/v1/keys      │
+│  │   ├── /gateway-sync/v1/audit     │
+│  │   └── /gateway-sync/v1/health    │
+│  └── Gateway admin UI               │
+└─────────────────────────────────────┘
+           │ (sync)
+           v
+┌─────────────────────────────────────┐
+│  Gateway (FastAPI + SQLite)         │
+│  ├── gateway_core/ (jaettu paketti) │
+│  │   ├── executor                   │
+│  │   ├── crypto                     │
+│  │   ├── models                     │
+│  │   ├── auth                       │
+│  │   └── diagnostics                │
+│  ├── MCP Server (JSON-RPC 2.0)     │
+│  ├── Setup Wizard (/setup/)        │
+│  └── Admin UI                       │
+└─────────────────────────────────────┘
+```
+
+**gateway_core/** on jaettu paketti, jota käyttävät sekä control plane (Django) että standalone gateway (FastAPI). Se sisältää executor-logiikan, kryptografiafunktiot, datamallit, autentikoinnin ja diagnostiikkatyökalut.
+
+**Credentialit** eivät koskaan poistu gatewayltä — ne syötetään suoraan gatewayn admin/setup UI:ssa.
+
+---
+
 ## Django-appit
 
 | App | Tarkoitus |
@@ -96,6 +142,7 @@ Agentti kutsuu toolia (esim. jira_issues_create)
 | `accounts` | Käyttäjät, tilit, kutsut, device auth |
 | `systems` | Ulkoiset järjestelmät, adapterit, resurssit, toiminnot |
 | `mcp` | MCP-gateway, projektit, API-avaimet, profiilit, kategoriat, logit |
+| `gateways` | Gateway-hallinta, Sync API, rekisteröinti |
 | `core` | Landing page, base-template, middleware |
 | `help` | Dokumentaatio |
 
@@ -128,6 +175,15 @@ Agentti kutsuu toolia (esim. jira_issues_create)
 | `/api/mcp/audit-logs/` | Audit-logit |
 | `/mcp/v1/` | MCP Streamable HTTP (agentit) |
 
+### Gateway Sync API
+| URL | Toiminto |
+|-----|----------|
+| `/gateway-sync/v1/register` | Gatewayn rekisteröinti |
+| `/gateway-sync/v1/specs` | Adapter-speksien synkronointi |
+| `/gateway-sync/v1/keys` | API-avainten synkronointi |
+| `/gateway-sync/v1/audit` | Audit-logien push |
+| `/gateway-sync/v1/health` | Health check -raportointi |
+
 ---
 
 ## Deployment
@@ -137,3 +193,4 @@ Agentti kutsuu toolia (esim. jira_issues_create)
 - **CI/CD**: GitHub Actions → SSH → `/opt/adapterly-cloud/deploy/deploy.sh`
 - **Deploy-skripti**: git pull → pip install → migrate → collectstatic → systemctl restart
 - **FastAPI MCP**: erillinen prosessi portissa 8001 (systemd: adapterly-fastapi)
+- **Gateway (Docker)**: `docker compose up -d` @ `/opt/adapterly/adapterly-gateway/`
