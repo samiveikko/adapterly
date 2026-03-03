@@ -128,7 +128,7 @@ jobs:
       - name: Run gateway tests
         working-directory: adapterly-gateway
         run: |
-          python -m pytest tests/ -v --cov=gateway_core --cov=gateway --cov-report=term-missing
+          python -m pytest tests/ -v --rootdir=. --cov=gateway_core --cov=gateway --cov-report=term-missing
 
   deploy-cloud:
     name: Trigger Cloud Deploy

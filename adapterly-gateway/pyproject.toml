@@ -29,5 +29,9 @@ test = [
 [project.scripts]
 adapterly-gateway = "gateway.cli:main"
 
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+python_files = ["test_*.py"]
+
 [tool.setuptools.packages.find]
 include = ["gateway*", "gateway_core*"]
