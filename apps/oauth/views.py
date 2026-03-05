@@ -267,6 +267,16 @@ def token(request):
         api_key.project = app.project
     elif auth_code.account.default_project:
         api_key.project = auth_code.account.default_project
+    else:
+        # Fallback: pick the first active project for the account
+        from apps.mcp.models import Project
+
+        first_project = Project.objects.filter(account=auth_code.account, is_active=True).first()
+        if first_project:
+            api_key.project = first_project
+        else:
+            # No project at all — make admin so it can still work
+            api_key.is_admin = True
     api_key.save()
 
     logger.info(
