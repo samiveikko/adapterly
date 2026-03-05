@@ -25,11 +25,31 @@ class OAuthApplication(models.Model):
     client_secret_prefix = models.CharField(max_length=10)
     redirect_uri = models.URLField(max_length=500)
 
+    # Agent profile — if set, tokens inherit this profile (overrides mode)
+    profile = models.ForeignKey(
+        "mcp.AgentProfile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="oauth_applications",
+        help_text="Agent profile for tokens. If set, overrides mode.",
+    )
+
+    # Project binding — tokens can be scoped to a project
+    project = models.ForeignKey(
+        "mcp.Project",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="oauth_applications",
+        help_text="Project to bind tokens to. If empty, uses account default.",
+    )
+
     mode = models.CharField(
         max_length=20,
         choices=[("safe", "Safe Mode"), ("power", "Power Mode")],
         default="safe",
-        help_text="Default mode for API keys created via this OAuth app.",
+        help_text="Default mode for API keys (used only if no profile is set).",
     )
 
     is_active = models.BooleanField(default=True)

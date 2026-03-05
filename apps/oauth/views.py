@@ -153,7 +153,7 @@ def token(request):
 
     # Create MCPApiKey as the access token
     key, prefix, key_hash = MCPApiKey.generate_key()
-    MCPApiKey.objects.create(
+    api_key = MCPApiKey(
         account=auth_code.account,
         created_by=auth_code.user,
         name=f"OAuth: {app.name} ({auth_code.user.username})",
@@ -162,6 +162,13 @@ def token(request):
         mode=app.mode,
         is_active=True,
     )
+    if app.profile:
+        api_key.profile = app.profile
+    if app.project:
+        api_key.project = app.project
+    elif auth_code.account.default_project:
+        api_key.project = auth_code.account.default_project
+    api_key.save()
 
     logger.info(
         "OAuth token issued for app=%s user=%s account=%s",

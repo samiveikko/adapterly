@@ -51,7 +51,13 @@
                 <ul class="list-unstyled small">
                   <li class="mb-1"><i class="bi bi-check-circle text-success me-1"></i> Call MCP tools on your behalf</li>
                   <li class="mb-1"><i class="bi bi-check-circle text-success me-1"></i> Access data within your account</li>
-                  <li><i class="bi bi-shield-check text-info me-1"></i> Mode: {{ app.get_mode_display }}</li>
+                  {% if app.profile %}
+                    <li class="mb-1"><i class="bi bi-person-badge text-primary me-1"></i> Profile: {{ app.profile.name }}</li>
+                  {% endif %}
+                  {% if app.project %}
+                    <li class="mb-1"><i class="bi bi-folder text-warning me-1"></i> Project: {{ app.project.name }}</li>
+                  {% endif %}
+                  <li><i class="bi bi-shield-check text-info me-1"></i> Mode: {% if app.profile %}{{ app.profile.get_mode_display }}{% else %}{{ app.get_mode_display }}{% endif %}</li>
                 </ul>
               </div>
 

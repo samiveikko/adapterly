@@ -12,7 +12,7 @@ class OAuthApplicationAdmin(admin.ModelAdmin):
     fieldsets = (
         (None, {"fields": ("name", "account", "redirect_uri")}),
         ("Credentials", {"fields": ("client_id", "client_secret_prefix", "client_secret_hash")}),
-        ("Settings", {"fields": ("mode", "is_active")}),
+        ("Token Settings", {"fields": ("profile", "project", "mode", "is_active")}),
         ("Timestamps", {"fields": ("created_at",)}),
     )
 
