@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     "apps.mcp",
     "apps.help",
     "apps.gateways",
+    "apps.oauth",
 ]
 
 MIDDLEWARE = [
